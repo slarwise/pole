@@ -1,20 +1,25 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 )
 
 func main() {
-	entry := DirEnt{
+	entrypoint := DirEnt{
 		IsDir: true,
-		Name:  "mountA",
+		Name:  "/",
 	}
 	vault := VaultClient{
 		Addr:  "http://127.0.0.1:8200",
 		Token: "dev-only-token",
+		Mount: "secret",
 	}
-	recurse(vault, entry)
+	recurse(vault, entrypoint)
 }
 
 type DirEnt struct {
@@ -28,7 +33,14 @@ func recurse(vault VaultClient, entry DirEnt) {
 		fmt.Printf("%s - %s\n", entry.Name, secret)
 		return
 	}
-	entries := vault.listDir(entry.Name)
+	subs := vault.listDir(entry.Name)
+	entries := []DirEnt{}
+	for _, sub := range subs {
+		entries = append(entries, DirEnt{
+			IsDir: sub.IsDir,
+			Name:  entry.Name + sub.Name,
+		})
+	}
 	var wg sync.WaitGroup
 	for _, e := range entries {
 		wg.Add(1)
@@ -43,46 +55,76 @@ func recurse(vault VaultClient, entry DirEnt) {
 type VaultClient struct {
 	Addr  string
 	Token string
+	Mount string
 }
 
 func (v VaultClient) listDir(name string) []DirEnt {
-	if name == "mountA" {
-		return []DirEnt{
-			{IsDir: true, Name: "dirA"},
-			{IsDir: false, Name: "secret2"},
-			{IsDir: true, Name: "dirB"},
-		}
-	} else if name == "dirA" {
-		return []DirEnt{
-			{IsDir: false, Name: "dirA/secret1"},
-		}
-	} else if name == "dirB" {
-		return []DirEnt{
-			{IsDir: false, Name: "dirB/secret3"},
-			{IsDir: true, Name: "dirB/dirC"},
-		}
-	} else if name == "dirB/dirC" {
-		return []DirEnt{
-			{IsDir: false, Name: "dirB/dirC/secret4"},
-			{IsDir: false, Name: "dirB/dirC/secret5"},
-		}
+	url := fmt.Sprintf("%s/v1/%s/metadata%s?list=true", v.Addr, v.Mount, name)
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
 	}
-	panic(fmt.Sprintf("Unknown dir %s", name))
+	request.Header.Set("X-Vault-Token", v.Token)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		panic(err)
+	}
+	if response.StatusCode != 200 {
+		panic(fmt.Sprintf("Error listing entries on url %s: %s", url, response.Status))
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		panic(err)
+	}
+	listResponse := struct {
+		Data struct {
+			Keys []string
+		}
+	}{}
+	if err := json.Unmarshal(body, &listResponse); err != nil {
+		panic(err)
+	}
+	entries := []DirEnt{}
+	for _, key := range listResponse.Data.Keys {
+		e := DirEnt{Name: key}
+		if strings.HasSuffix(key, "/") {
+			e.IsDir = true
+		}
+		entries = append(entries, e)
+	}
+	return entries
 }
 
-func (v VaultClient) getSecret(name string) string {
-	switch name {
-	case "dirA/secret1":
-		return "password1"
-	case "secret2":
-		return "password2"
-	case "dirB/secret3":
-		return "password3"
-	case "dirB/dirC/secret4":
-		return "password4"
-	case "dirB/dirC/secret5":
-		return "password5"
-	default:
-		panic(fmt.Sprintf("Unknown secret %s", name))
+type Secret map[string]string
+
+func (v VaultClient) getSecret(name string) Secret {
+	url := fmt.Sprintf("%s/v1/%s/data/%s", v.Addr, v.Mount, name)
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
 	}
+	request.Header.Set("X-Vault-Token", v.Token)
+	request.Header.Set("X-Vault-Request", "true")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		panic(err)
+	}
+	if response.StatusCode != 200 {
+		panic(fmt.Sprintf("Error getting secret on url %s: %s", url, response.Status))
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		panic(err)
+	}
+	getResponse := struct {
+		Data struct {
+			Data map[string]string
+		}
+	}{}
+	if err := json.Unmarshal(body, &getResponse); err != nil {
+		panic(err)
+	}
+	return getResponse.Data.Data
 }
