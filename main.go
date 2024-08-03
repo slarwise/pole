@@ -28,16 +28,21 @@ func main() {
 		IsDir: true,
 		Name:  "/",
 	}
+	keys := getKeys(vault, entrypoint)
+	fmt.Println(keys)
+}
+
+func getKeys(vault VaultClient, entrypoint DirEnt) []string {
 	recv := make(chan string)
 	go func() {
 		recurse(recv, vault, entrypoint)
 		close(recv)
 	}()
-	entries := []string{}
-	for e := range recv {
-		entries = append(entries, e)
+	keys := []string{}
+	for key := range recv {
+		keys = append(keys, key)
 	}
-	fmt.Println(entries)
+	return keys
 }
 
 type DirEnt struct {
@@ -50,9 +55,9 @@ func recurse(recv chan string, vault VaultClient, entry DirEnt) {
 		recv <- entry.Name
 		return
 	}
-	relative_entries := vault.listDir(entry.Name)
+	relativeEntries := vault.listDir(entry.Name)
 	entries := []DirEnt{}
-	for _, sub := range relative_entries {
+	for _, sub := range relativeEntries {
 		entries = append(entries, DirEnt{
 			IsDir: sub.IsDir,
 			Name:  entry.Name + sub.Name,
