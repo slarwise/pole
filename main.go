@@ -24,12 +24,20 @@ func main() {
 		Token: envOrPanic("VAULT_TOKEN"),
 		Mount: envOrPanic("VAULT_MOUNT"),
 	}
-	entrypoint := DirEnt{
-		IsDir: true,
-		Name:  "/",
+	entrypoint := "/"
+	if len(os.Args) > 1 {
+		entrypoint = os.Args[1]
+		if !strings.HasPrefix(entrypoint, "/") {
+			entrypoint = "/" + entrypoint
+		}
+		if !strings.HasSuffix(entrypoint, "/") {
+			entrypoint += "/"
+		}
 	}
-	keys := getKeys(vault, entrypoint)
-	fmt.Println(keys)
+	keys := getKeys(vault, DirEnt{IsDir: true, Name: entrypoint})
+	for _, key := range keys {
+		fmt.Println(key)
+	}
 }
 
 func getKeys(vault VaultClient, entrypoint DirEnt) []string {
