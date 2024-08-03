@@ -28,7 +28,16 @@ func main() {
 		IsDir: true,
 		Name:  "/",
 	}
-	recurse(vault, entrypoint)
+	recv := make(chan string)
+	go func() {
+		recurse(recv, vault, entrypoint)
+		close(recv)
+	}()
+	entries := []string{}
+	for e := range recv {
+		entries = append(entries, e)
+	}
+	fmt.Println(entries)
 }
 
 type DirEnt struct {
@@ -36,10 +45,9 @@ type DirEnt struct {
 	Name  string
 }
 
-func recurse(vault VaultClient, entry DirEnt) {
+func recurse(recv chan string, vault VaultClient, entry DirEnt) {
 	if !entry.IsDir {
-		secret := vault.getSecret(entry.Name)
-		fmt.Printf("%s - %s\n", entry.Name, secret)
+		recv <- entry.Name
 		return
 	}
 	relative_entries := vault.listDir(entry.Name)
@@ -55,7 +63,7 @@ func recurse(vault VaultClient, entry DirEnt) {
 		wg.Add(1)
 		go func(entry DirEnt) {
 			defer wg.Done()
-			recurse(vault, e)
+			recurse(recv, vault, e)
 		}(e)
 	}
 	wg.Wait()
