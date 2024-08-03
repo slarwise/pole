@@ -10,7 +10,11 @@ func main() {
 		IsDir: true,
 		Name:  "mountA",
 	}
-	recurse(entry)
+	vault := VaultClient{
+		Addr:  "http://127.0.0.1:8200",
+		Token: "dev-only-token",
+	}
+	recurse(vault, entry)
 }
 
 type DirEnt struct {
@@ -18,24 +22,30 @@ type DirEnt struct {
 	Name  string
 }
 
-func recurse(entry DirEnt) {
+func recurse(vault VaultClient, entry DirEnt) {
 	if !entry.IsDir {
-		fmt.Printf("Found secret: %s\n", entry.Name)
+		secret := vault.getSecret(entry.Name)
+		fmt.Printf("%s - %s\n", entry.Name, secret)
 		return
 	}
-	entries := listDir(entry.Name)
+	entries := vault.listDir(entry.Name)
 	var wg sync.WaitGroup
 	for _, e := range entries {
 		wg.Add(1)
 		go func(entry DirEnt) {
 			defer wg.Done()
-			recurse(e)
+			recurse(vault, e)
 		}(e)
 	}
 	wg.Wait()
 }
 
-func listDir(name string) []DirEnt {
+type VaultClient struct {
+	Addr  string
+	Token string
+}
+
+func (v VaultClient) listDir(name string) []DirEnt {
 	if name == "mountA" {
 		return []DirEnt{
 			{IsDir: true, Name: "dirA"},
@@ -60,11 +70,19 @@ func listDir(name string) []DirEnt {
 	panic(fmt.Sprintf("Unknown dir %s", name))
 }
 
-func getSecret(name string) string {
-	if name == "dirA/secret1" {
+func (v VaultClient) getSecret(name string) string {
+	switch name {
+	case "dirA/secret1":
 		return "password1"
-	} else if name == "secret2" {
+	case "secret2":
 		return "password2"
+	case "dirB/secret3":
+		return "password3"
+	case "dirB/dirC/secret4":
+		return "password4"
+	case "dirB/dirC/secret5":
+		return "password5"
+	default:
+		panic(fmt.Sprintf("Unknown secret %s", name))
 	}
-	panic(fmt.Sprintf("Unknown secret %s", name))
 }
