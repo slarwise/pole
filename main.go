@@ -178,15 +178,31 @@ func (v VaultClient) getSecret(name string) Secret {
 	if err != nil {
 		panic(err)
 	}
-	if response.StatusCode != 200 {
-		panic(fmt.Sprintf("Error getting secret on url %s: %s", url, response.Status))
-	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
+	if response.StatusCode != 200 {
+		// 404 can mean that the secret has been deleted, but it will still
+		// be listed. Supposedly all status codes above 400 return an
+		// error body. This is not true in this case. I guess we can look
+		// at the body and see if it has errors, if not the response is
+		// still valid and we can show the data.
+		// https://developer.hashicorp.com/vault/api-docs#error-response
+		var secret Secret
+		if err := json.Unmarshal(body, &secret); err != nil {
+			panic(fmt.Sprintf("Failed to unmarshal secret response body: %s, %s", err.Error(), string(body)))
+		}
+		if secret.Data.Data == nil && secret.Data.Metadata == nil {
+			// We got an error for real for real
+			panic(fmt.Sprintf("Error getting secret on url %s: %s\n%s", url, response.Status, body))
+		}
+		return secret
+	}
 	if err != nil {
 		panic(err)
 	}
 	var secret Secret
-	json.Unmarshal(body, &secret)
+	if err := json.Unmarshal(body, &secret); err != nil {
+		panic(fmt.Sprintf("Failed to unmarshal secret response body: %s, %s", err.Error(), string(body)))
+	}
 	return secret
 }
