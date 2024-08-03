@@ -5,19 +5,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 )
 
+func envOrPanic(name string) string {
+	value, found := os.LookupEnv(name)
+	if !found {
+		panic(fmt.Sprintf("Enivronment variable %s must be set", name))
+	}
+	return value
+}
+
 func main() {
+	vault := VaultClient{
+		Addr:  envOrPanic("VAULT_ADDR"),
+		Token: envOrPanic("VAULT_TOKEN"),
+		Mount: envOrPanic("VAULT_MOUNT"),
+	}
 	entrypoint := DirEnt{
 		IsDir: true,
 		Name:  "/",
-	}
-	vault := VaultClient{
-		Addr:  "http://127.0.0.1:8200",
-		Token: "dev-only-token",
-		Mount: "secret",
 	}
 	recurse(vault, entrypoint)
 }
@@ -33,9 +42,9 @@ func recurse(vault VaultClient, entry DirEnt) {
 		fmt.Printf("%s - %s\n", entry.Name, secret)
 		return
 	}
-	subs := vault.listDir(entry.Name)
+	relative_entries := vault.listDir(entry.Name)
 	entries := []DirEnt{}
-	for _, sub := range subs {
+	for _, sub := range relative_entries {
 		entries = append(entries, DirEnt{
 			IsDir: sub.IsDir,
 			Name:  entry.Name + sub.Name,
@@ -65,6 +74,7 @@ func (v VaultClient) listDir(name string) []DirEnt {
 		panic(err)
 	}
 	request.Header.Set("X-Vault-Token", v.Token)
+	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		panic(err)
@@ -105,7 +115,7 @@ func (v VaultClient) getSecret(name string) Secret {
 		panic(err)
 	}
 	request.Header.Set("X-Vault-Token", v.Token)
-	request.Header.Set("X-Vault-Request", "true")
+	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		panic(err)
