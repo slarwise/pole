@@ -1,0 +1,5 @@
+#!/bin/bash
+
+./pole3 tree "$1" 2>/dev/null |
+    fzf --preview './pole3 get {} | jq --color-output' \
+        --bind 'enter:become(./pole3 get {})'
