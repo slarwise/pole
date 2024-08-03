@@ -91,7 +91,11 @@ func recurse(recv chan string, vault VaultClient, entry DirEnt) {
 		recv <- entry.Name
 		return
 	}
-	relativeEntries := vault.listDir(entry.Name)
+	relativeEntries, err := vault.listDir(entry.Name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to list directory %s: %s\n", entry.Name, err.Error())
+		return
+	}
 	entries := []DirEnt{}
 	for _, sub := range relativeEntries {
 		entries = append(entries, DirEnt{
@@ -116,7 +120,7 @@ type VaultClient struct {
 	Mount string
 }
 
-func (v VaultClient) listDir(name string) []DirEnt {
+func (v VaultClient) listDir(name string) ([]DirEnt, error) {
 	url := fmt.Sprintf("%s/v1/%s/metadata%s?list=true", v.Addr, v.Mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -129,7 +133,7 @@ func (v VaultClient) listDir(name string) []DirEnt {
 		panic(err)
 	}
 	if response.StatusCode != 200 {
-		panic(fmt.Sprintf("Error listing entries on url %s: %s", url, response.Status))
+		return []DirEnt{}, fmt.Errorf("Error listing entries on url %s: %s", url, response.Status)
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
@@ -152,7 +156,7 @@ func (v VaultClient) listDir(name string) []DirEnt {
 		}
 		entries = append(entries, e)
 	}
-	return entries
+	return entries, nil
 }
 
 type Secret struct {
