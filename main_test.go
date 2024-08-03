@@ -76,9 +76,9 @@ func TestGetSecret(t *testing.T) {
 		Mount: "secret",
 	}
 	secret := vault.getSecret("/bar/baz")
-	data, found := secret["c"]
+	data, found := secret.Data.Data["c"]
 	if !found || data != "d" {
-		t.Fatalf("Expected secret to have data `c=d`, got %v", secret)
+		t.Fatalf("Expected secret to have data `c=d`, got %v", secret.Data.Data)
 	}
 }
 

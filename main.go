@@ -58,9 +58,11 @@ func main() {
 			key = "/" + key
 		}
 		secret := vault.getSecret(key)
-		for key, val := range secret {
-			fmt.Printf("%s: %v\n", key, val)
+		output, err := json.MarshalIndent(secret, "", "  ")
+		if err != nil {
+			fatal("Could not marshal secret as json: %s", err)
 		}
+		fmt.Println(string(output))
 	} else {
 		fatal("Subcommand must be one of `tree` or `get`, got %s", subcommand)
 	}
@@ -153,7 +155,12 @@ func (v VaultClient) listDir(name string) []DirEnt {
 	return entries
 }
 
-type Secret map[string]interface{}
+type Secret struct {
+	Data struct {
+		Data     map[string]interface{} `json:"data"`
+		Metadata map[string]interface{} `json:"metadata"`
+	} `json:"data"`
+}
 
 func (v VaultClient) getSecret(name string) Secret {
 	url := fmt.Sprintf("%s/v1/%s/data%s", v.Addr, v.Mount, name)
@@ -175,13 +182,7 @@ func (v VaultClient) getSecret(name string) Secret {
 	if err != nil {
 		panic(err)
 	}
-	getResponse := struct {
-		Data struct {
-			Data map[string]interface{}
-		}
-	}{}
-	if err := json.Unmarshal(body, &getResponse); err != nil {
-		panic(err)
-	}
-	return getResponse.Data.Data
+	var secret Secret
+	json.Unmarshal(body, &secret)
+	return secret
 }
