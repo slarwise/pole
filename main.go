@@ -13,9 +13,15 @@ import (
 func envOrPanic(name string) string {
 	value, found := os.LookupEnv(name)
 	if !found {
-		panic(fmt.Sprintf("Enivronment variable %s must be set", name))
+		panic(fmt.Sprintf("Environment variable %s must be set", name))
 	}
 	return value
+}
+
+func fatal(format string, args ...any) {
+	format = format + "\n"
+	fmt.Fprintf(os.Stderr, format, args...)
+	os.Exit(1)
 }
 
 func main() {
@@ -24,19 +30,39 @@ func main() {
 		Token: envOrPanic("VAULT_TOKEN"),
 		Mount: envOrPanic("VAULT_MOUNT"),
 	}
-	entrypoint := "/"
-	if len(os.Args) > 1 {
-		entrypoint = os.Args[1]
-		if !strings.HasPrefix(entrypoint, "/") {
-			entrypoint = "/" + entrypoint
-		}
-		if !strings.HasSuffix(entrypoint, "/") {
-			entrypoint += "/"
-		}
+	if len(os.Args) < 2 {
+		fatal("Must provide subcommand `tree` or `get`")
 	}
-	keys := getKeys(vault, DirEnt{IsDir: true, Name: entrypoint})
-	for _, key := range keys {
-		fmt.Println(key)
+	subcommand := os.Args[1]
+	if subcommand == "tree" {
+		entrypoint := "/"
+		if len(os.Args) > 2 {
+			entrypoint = os.Args[2]
+			if !strings.HasPrefix(entrypoint, "/") {
+				entrypoint = "/" + entrypoint
+			}
+			if !strings.HasSuffix(entrypoint, "/") {
+				entrypoint += "/"
+			}
+		}
+		keys := getKeys(vault, DirEnt{IsDir: true, Name: entrypoint})
+		for _, key := range keys {
+			fmt.Println(key)
+		}
+	} else if subcommand == "get" {
+		if len(os.Args) < 2 {
+			fatal("Must provide the name of the secret")
+		}
+		key := os.Args[2]
+		if !strings.HasPrefix(key, "/") {
+			key = "/" + key
+		}
+		secret := vault.getSecret(key)
+		for key, val := range secret {
+			fmt.Printf("%s: %v\n", key, val)
+		}
+	} else {
+		fatal("Subcommand must be one of `tree` or `get`, got %s", subcommand)
 	}
 }
 
@@ -127,7 +153,7 @@ func (v VaultClient) listDir(name string) []DirEnt {
 	return entries
 }
 
-type Secret map[string]string
+type Secret map[string]interface{}
 
 func (v VaultClient) getSecret(name string) Secret {
 	url := fmt.Sprintf("%s/v1/%s/data%s", v.Addr, v.Mount, name)
@@ -151,7 +177,7 @@ func (v VaultClient) getSecret(name string) Secret {
 	}
 	getResponse := struct {
 		Data struct {
-			Data map[string]string
+			Data map[string]interface{}
 		}
 	}{}
 	if err := json.Unmarshal(body, &getResponse); err != nil {
