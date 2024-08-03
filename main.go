@@ -122,7 +122,7 @@ func (v VaultClient) listDir(name string) []DirEnt {
 type Secret map[string]string
 
 func (v VaultClient) getSecret(name string) Secret {
-	url := fmt.Sprintf("%s/v1/%s/data/%s", v.Addr, v.Mount, name)
+	url := fmt.Sprintf("%s/v1/%s/data%s", v.Addr, v.Mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		panic(err)

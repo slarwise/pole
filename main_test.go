@@ -9,26 +9,28 @@ import (
 	"time"
 )
 
+const (
+	token     = "dev-only-token"
+	vaultAddr = "http://127.0.0.1:8200"
+)
+
 func TestGetKeys(t *testing.T) {
-	token := "dev-only-token"
-	vaultAddr := "http://127.0.0.1:8200"
-	cmd := exec.Command("vault", "server", "-dev", "-dev-root-token-id", token, "-address", vaultAddr)
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("Failed to start the vault server: %s", err.Error())
+	vaultServer, err := startVault(token, vaultAddr)
+	if err != nil {
+		t.Fatalf("Failed to start vault: %s", err)
 	}
 	defer func() {
-		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		if err := vaultServer.Process.Signal(os.Interrupt); err != nil {
 			t.Logf("Failed to stop the vault server: %s", err.Error())
 		}
-		cmd.Wait()
+		vaultServer.Wait()
 	}()
-	time.Sleep(1 * time.Second)
 	secrets := map[string]string{
 		"/foo":     "a=b",
 		"/bar/baz": "c=d",
 		"/enterprise/organization/department/unit/team/user/actual-user": "free=palestine",
 	}
-	if err := populate(t, vaultAddr, token, secrets); err != nil {
+	if err := populate(vaultAddr, token, secrets); err != nil {
 		t.Fatalf("Failed to populate vault with secrets: %s", err.Error())
 	}
 	vault := VaultClient{
@@ -51,7 +53,45 @@ func TestGetKeys(t *testing.T) {
 	}
 }
 
-func populate(t *testing.T, vaultAddr, token string, secrets map[string]string) error {
+func TestGetSecret(t *testing.T) {
+	vaultServer, err := startVault(token, vaultAddr)
+	if err != nil {
+		t.Fatalf("Failed to start vault: %s", err)
+	}
+	defer func() {
+		if err := vaultServer.Process.Signal(os.Interrupt); err != nil {
+			t.Logf("Failed to stop the vault server: %s", err.Error())
+		}
+		vaultServer.Wait()
+	}()
+	secrets := map[string]string{
+		"/bar/baz": "c=d",
+	}
+	if err := populate(vaultAddr, token, secrets); err != nil {
+		t.Fatalf("Failed to populate vault with secrets: %s", err.Error())
+	}
+	vault := VaultClient{
+		Addr:  vaultAddr,
+		Token: token,
+		Mount: "secret",
+	}
+	secret := vault.getSecret("/bar/baz")
+	data, found := secret["c"]
+	if !found || data != "d" {
+		t.Fatalf("Expected secret to have data `c=d`, got %v", secret)
+	}
+}
+
+func startVault(token, addr string) (*exec.Cmd, error) {
+	cmd := exec.Command("vault", "server", "-dev", "-dev-root-token-id", token, "-address", addr)
+	if err := cmd.Start(); err != nil {
+		return cmd, err
+	}
+	time.Sleep(1 * time.Second)
+	return cmd, nil
+}
+
+func populate(vaultAddr, token string, secrets map[string]string) error {
 	for key, data := range secrets {
 		cmd := exec.Command("vault", "kv", "put",
 			"-mount", "secret",
@@ -64,7 +104,6 @@ func populate(t *testing.T, vaultAddr, token string, secrets map[string]string) 
 		if err != nil {
 			return fmt.Errorf("Failed to create secret: %s", output)
 		}
-		t.Logf("Created secret: %s", output)
 	}
 	return nil
 }
