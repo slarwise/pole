@@ -75,7 +75,10 @@ func TestGetSecret(t *testing.T) {
 		Token: token,
 		Mount: "secret",
 	}
-	secret := vault.getSecret("/bar/baz")
+	secret, err := vault.getSecret("/bar/baz")
+	if err != nil {
+		t.Fatalf("Got unexpected error: %s", err)
+	}
 	data, found := secret.Data.Data["c"]
 	if !found || data != "d" {
 		t.Fatalf("Expected secret to have data `c=d`, got %v", secret.Data.Data)
