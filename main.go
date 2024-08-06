@@ -115,7 +115,7 @@ func main() {
 				case tcell.KeyEscape, tcell.KeyCtrlC:
 					return
 				case tcell.KeyEnter:
-					secret, err := vault.getSecret(filteredKeys[0])
+					secret, err := vault.getSecret(filteredKeys[selectedIndex])
 					if err != nil {
 						panic("oopa")
 					}
@@ -345,41 +345,116 @@ func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex in
 
 // TODO: Add color so it looks like jq-ish
 func drawSecret(s tcell.Screen, width, height int, secret Secret) {
-	bytes, _ := json.MarshalIndent(secret, "", "  ")
-	str := string(bytes)
 	x := width / 2
 	y := 0
-	insideString := false
-	style := tcell.StyleDefault
-	isEscaped := false
-	for _, c := range str {
-		switch c {
-		case 10: // Newline
-			y++
-			x = width / 2
-		case 34: // "
-			if !isEscaped {
-				if insideString {
-					s.SetContent(x, y, c, nil, style)
-					insideString = false
-					style = tcell.StyleDefault
-					x++
-				} else {
-					insideString = true
-					style = tcell.StyleDefault.Foreground(tcell.ColorBlue)
-					s.SetContent(x, y, c, nil, style)
-					x++
-				}
+	s.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
+	y++
+	drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), `"data": {`)
+	y++
+	i := 0
+	for k, v := range secret.Data.Data {
+		kStr := fmt.Sprintf(`"%s": `, k)
+		drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
+		vStart := x + 4 + len(kStr)
+		switch v.(type) {
+		case string:
+			if i < len(secret.Data.Data)-1 {
+				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, v))
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, v))
 			}
-		case 92: // \
-			isEscaped = true
-			continue
+		case []interface{}:
+			if len(v.([]interface{})) == 0 {
+				if i < len(secret.Data.Data)-1 {
+					drawLine(s, vStart, y, tcell.StyleDefault, "[],")
+				} else {
+					drawLine(s, vStart, y, tcell.StyleDefault, "[]")
+				}
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault, "[")
+				y++
+				for i, element := range v.([]interface{}) {
+					if i < len(v.([]interface{}))-1 {
+						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
+					} else {
+						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
+					}
+					y++
+				}
+				drawLine(s, x+4, y, tcell.StyleDefault, "],")
+			}
+		case nil:
+			if i < len(secret.Data.Data)-1 {
+				drawLine(s, vStart, y, tcell.StyleDefault, "null,")
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault, "null")
+			}
 		default:
-			s.SetContent(x, y, c, nil, style)
-			x++
+			if i < len(secret.Data.Data)-1 {
+				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", v))
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", v))
+			}
 		}
-		isEscaped = false
+		y++
+		i++
 	}
+	s.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
+	y++
+
+	drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), `"metadata": {`)
+	y++
+	i = 0
+	for k, v := range secret.Data.Metadata {
+		kStr := fmt.Sprintf(`"%s": `, k)
+		drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
+		vStart := x + 4 + len(kStr)
+		switch v.(type) {
+		case string:
+			if i < len(secret.Data.Data)-1 {
+				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, v))
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, v))
+			}
+		case []interface{}:
+			if len(v.([]interface{})) == 0 {
+				if i < len(secret.Data.Data)-1 {
+					drawLine(s, vStart, y, tcell.StyleDefault, "[],")
+				} else {
+					drawLine(s, vStart, y, tcell.StyleDefault, "[]")
+				}
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault, "[")
+				y++
+				for i, element := range v.([]interface{}) {
+					if i < len(v.([]interface{}))-1 {
+						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
+					} else {
+						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
+					}
+					y++
+				}
+				drawLine(s, x+4, y, tcell.StyleDefault, "],")
+			}
+		case nil:
+			if i < len(secret.Data.Data)-1 {
+				drawLine(s, vStart, y, tcell.StyleDefault, "null,")
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault, "null")
+			}
+		default:
+			if i < len(secret.Data.Data)-1 {
+				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", v))
+			} else {
+				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", v))
+			}
+		}
+		y++
+		i++
+	}
+	s.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
+	y++
+	s.SetContent(x, y, rune("}"[0]), nil, tcell.StyleDefault)
 }
 
 func drawStats(s tcell.Screen, height int, keys []string) {
