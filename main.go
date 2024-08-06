@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 func mustGetEnv(name string) string {
@@ -68,6 +70,95 @@ func main() {
 			fatal("Could not marshal secret as json", "error", err)
 		}
 		fmt.Println(string(output))
+	} else if subcommand == "interactive" {
+		slog.SetLogLoggerLevel(slog.LevelError)
+		screen, err := tcell.NewScreen()
+		if err != nil {
+			fatal("Failed to create a terminal screen: %s", err.Error())
+		}
+		if err := screen.Init(); err != nil {
+			fatal("Failed to initialize terminal screen: %s", err)
+		}
+		screen.EnablePaste()
+		screen.Clear()
+		result := []byte{}
+		filteredKeys := []string{}
+		quit := func() {
+			// You have to catch panics in a defer, clean up, and
+			// re-raise them - otherwise your application can
+			// die without leaving any diagnostic trace.
+			maybePanic := recover()
+			screen.Fini()
+			if maybePanic != nil {
+				panic(maybePanic)
+			}
+			if len(result) != 0 {
+				fmt.Printf("%s\n", result)
+			}
+		}
+		defer quit()
+		_, height := screen.Size()
+		prompt := ""
+		selectedIndex := 0
+		drawPrompt(screen, height, prompt)
+		drawLoadingScreen(screen, height)
+		screen.Show()
+		keys := getKeys(vault, DirEnt{IsDir: true, Name: "/"})
+		for {
+			ev := screen.PollEvent()
+			switch ev := ev.(type) {
+			case *tcell.EventResize:
+				screen.Sync()
+			case *tcell.EventKey:
+				switch ev.Key() {
+				case tcell.KeyEscape, tcell.KeyCtrlC:
+					return
+				case tcell.KeyEnter:
+					secret, err := vault.getSecret(filteredKeys[0])
+					if err != nil {
+						panic("oopa")
+					}
+					bytes, err := json.MarshalIndent(secret, "", "  ")
+					if err != nil {
+						panic("gangnam")
+					}
+					result = bytes
+					return
+				case tcell.KeyBackspace, tcell.KeyBackspace2:
+					if len(prompt) > 0 {
+						prompt = prompt[:len(prompt)-1]
+					}
+				case tcell.KeyCtrlU:
+					prompt = ""
+				case tcell.KeyCtrlK, tcell.KeyCtrlP:
+					selectedIndex = min(len(filteredKeys)-1, selectedIndex+1)
+				case tcell.KeyCtrlJ, tcell.KeyCtrlN:
+					selectedIndex = max(0, selectedIndex-1)
+				case tcell.KeyRune:
+					prompt += string(ev.Rune())
+					selectedIndex = 0
+				}
+			}
+			width, height := screen.Size()
+			filteredKeys = []string{}
+			for _, k := range keys {
+				if strings.Contains(k, prompt) {
+					filteredKeys = append(filteredKeys, k)
+				}
+			}
+			screen.Clear()
+			drawKeys(screen, width, height, filteredKeys, selectedIndex)
+			drawStats(screen, height, filteredKeys)
+			drawPrompt(screen, height, prompt)
+			if len(filteredKeys) > 0 {
+				secret, err := vault.getSecret(filteredKeys[selectedIndex])
+				if err != nil {
+					panic("style")
+				}
+				drawSecret(screen, width, height, secret)
+			}
+			screen.Show()
+		}
 	} else {
 		fatal(fmt.Sprintf("Subcommand must be one of `tree` or `get`, got %s", subcommand))
 	}
@@ -203,4 +294,77 @@ func (v VaultClient) getSecret(name string) (Secret, error) {
 		return Secret{}, fmt.Errorf("Got %s on url %s", response.Status, url)
 	}
 	return secret, nil
+}
+
+func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
+	for _, r := range []rune(text) {
+		s.SetContent(x, y, r, nil, style)
+		x++
+	}
+}
+
+func drawBox(s tcell.Screen, x, y, width, height int) {
+	//  __________
+	// |          |
+	// |          |
+	//  ----------
+	// str := "-"
+	// s.SetContent(0, 1, rune(str[0]), nil, tcell.StyleDefault)
+	top := rune("0"[0])
+	for xc := x + 1; xc < width+x-1; xc++ {
+		s.SetContent(xc, y, top, nil, tcell.StyleDefault)
+	}
+	side := rune("|"[0])
+	for yc := y + 1; yc < height-1; yc++ {
+		s.SetContent(x, yc, side, nil, tcell.StyleDefault)
+		s.SetContent(x+width-1, yc, side, nil, tcell.StyleDefault)
+	}
+	bottom := top
+	for xc := x + 1; xc < width+x-1; xc++ {
+		s.SetContent(xc, height-1, bottom, nil, tcell.StyleDefault)
+	}
+}
+
+// TODO: Handle going out of bounds
+func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
+	keys = keys[:min(height-2, len(keys))]
+	y := height - 3
+	for _, line := range keys {
+		line = line[:min(width/2, len(line))]
+		if y == (height - 3 - selectedIndex) {
+			drawLine(s, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
+			drawLine(s, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
+			drawLine(s, 2, y, tcell.StyleDefault.Background(tcell.ColorBlack), line)
+		} else {
+			drawLine(s, 2, y, tcell.StyleDefault, line)
+		}
+		y--
+	}
+}
+
+// TODO: Add color so it looks like jq-ish
+func drawSecret(s tcell.Screen, width, height int, secret Secret) {
+	bytes, _ := json.MarshalIndent(secret, "", "  ")
+	str := string(bytes)
+	lines := strings.Split(str, "\n")
+	for y, line := range lines {
+		drawLine(s, width/2, y, tcell.StyleDefault, line)
+		if y >= height {
+			break
+		}
+	}
+}
+
+func drawStats(s tcell.Screen, height int, keys []string) {
+	nKeys := len(keys)
+	drawLine(s, 2, height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%d", nKeys))
+}
+
+func drawPrompt(s tcell.Screen, height int, prompt string) {
+	drawLine(s, 0, height-1, tcell.StyleDefault.Bold(true), ">")
+	drawLine(s, 2, height-1, tcell.StyleDefault, prompt)
+}
+
+func drawLoadingScreen(s tcell.Screen, height int) {
+	drawLine(s, 2, height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), "Loading...")
 }
