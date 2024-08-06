@@ -347,12 +347,38 @@ func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex in
 func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 	bytes, _ := json.MarshalIndent(secret, "", "  ")
 	str := string(bytes)
-	lines := strings.Split(str, "\n")
-	for y, line := range lines {
-		drawLine(s, width/2, y, tcell.StyleDefault, line)
-		if y >= height {
-			break
+	x := width / 2
+	y := 0
+	insideString := false
+	style := tcell.StyleDefault
+	isEscaped := false
+	for _, c := range str {
+		switch c {
+		case 10: // Newline
+			y++
+			x = width / 2
+		case 34: // "
+			if !isEscaped {
+				if insideString {
+					s.SetContent(x, y, c, nil, style)
+					insideString = false
+					style = tcell.StyleDefault
+					x++
+				} else {
+					insideString = true
+					style = tcell.StyleDefault.Foreground(tcell.ColorBlue)
+					s.SetContent(x, y, c, nil, style)
+					x++
+				}
+			}
+		case 92: // \
+			isEscaped = true
+			continue
+		default:
+			s.SetContent(x, y, c, nil, style)
+			x++
 		}
+		isEscaped = false
 	}
 }
 
