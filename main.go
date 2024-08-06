@@ -38,7 +38,8 @@ func main() {
 		fatal("Must provide subcommand `tree` or `get`")
 	}
 	subcommand := os.Args[1]
-	if subcommand == "tree" {
+	switch subcommand {
+	case "tree":
 		entrypoint := "/"
 		if len(os.Args) > 2 {
 			entrypoint = os.Args[2]
@@ -53,7 +54,7 @@ func main() {
 		for _, key := range keys {
 			fmt.Println(key)
 		}
-	} else if subcommand == "get" {
+	case "get":
 		if len(os.Args) < 3 {
 			fatal("Must provide the name of the secret, e.g. ./pole3 get my-secret")
 		}
@@ -70,7 +71,7 @@ func main() {
 			fatal("Could not marshal secret as json", "error", err)
 		}
 		fmt.Println(string(output))
-	} else if subcommand == "interactive" {
+	case "interactive":
 		slog.SetLogLoggerLevel(slog.LevelError)
 		screen, err := tcell.NewScreen()
 		if err != nil {
@@ -159,7 +160,7 @@ func main() {
 			}
 			screen.Show()
 		}
-	} else {
+	default:
 		fatal(fmt.Sprintf("Subcommand must be one of `tree` or `get`, got %s", subcommand))
 	}
 }
