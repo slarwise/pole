@@ -304,28 +304,6 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-func drawBox(s tcell.Screen, x, y, width, height int) {
-	//  __________
-	// |          |
-	// |          |
-	//  ----------
-	// str := "-"
-	// s.SetContent(0, 1, rune(str[0]), nil, tcell.StyleDefault)
-	top := rune("0"[0])
-	for xc := x + 1; xc < width+x-1; xc++ {
-		s.SetContent(xc, y, top, nil, tcell.StyleDefault)
-	}
-	side := rune("|"[0])
-	for yc := y + 1; yc < height-1; yc++ {
-		s.SetContent(x, yc, side, nil, tcell.StyleDefault)
-		s.SetContent(x+width-1, yc, side, nil, tcell.StyleDefault)
-	}
-	bottom := top
-	for xc := x + 1; xc < width+x-1; xc++ {
-		s.SetContent(xc, height-1, bottom, nil, tcell.StyleDefault)
-	}
-}
-
 // TODO: Handle going out of bounds
 func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
 	keys = keys[:min(height-2, len(keys))]
