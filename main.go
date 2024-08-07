@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -337,7 +338,13 @@ func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 	drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), `"data": {`)
 	y++
 	i := 0
-	for k, v := range secret.Data.Data {
+	dataKeys := []string{}
+	for k := range secret.Data.Data {
+		dataKeys = append(dataKeys, k)
+	}
+	sort.Strings(dataKeys)
+	for _, k := range dataKeys {
+		v := secret.Data.Data[k]
 		kStr := fmt.Sprintf(`"%s": `, k)
 		drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
 		vStart := x + 4 + len(kStr)
@@ -390,7 +397,13 @@ func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 	drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), `"metadata": {`)
 	y++
 	i = 0
-	for k, v := range secret.Data.Metadata {
+	metadataKeys := []string{}
+	for k := range secret.Data.Data {
+		metadataKeys = append(metadataKeys, k)
+	}
+	sort.Strings(metadataKeys)
+	for _, k := range metadataKeys {
+		v := secret.Data.Metadata[k]
 		kStr := fmt.Sprintf(`"%s": `, k)
 		drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
 		vStart := x + 4 + len(kStr)
