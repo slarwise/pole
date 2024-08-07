@@ -102,11 +102,13 @@ func main() {
 		defer quit()
 		_, height := screen.Size()
 		prompt := ""
+		nextPrompt := ""
 		selectedIndex := 0
 		drawPrompt(screen, height, prompt)
 		drawLoadingScreen(screen, height)
 		screen.Show()
 		keys := getKeys(vault, DirEnt{IsDir: true, Name: "/"})
+		filteredKeys = keys
 		for {
 			ev := screen.PollEvent()
 			switch ev := ev.(type) {
@@ -129,24 +131,27 @@ func main() {
 					return
 				case tcell.KeyBackspace, tcell.KeyBackspace2:
 					if len(prompt) > 0 {
-						prompt = prompt[:len(prompt)-1]
+						nextPrompt = prompt[:len(prompt)-1]
 					}
 				case tcell.KeyCtrlU:
-					prompt = ""
+					nextPrompt = ""
 				case tcell.KeyCtrlK, tcell.KeyCtrlP:
 					selectedIndex = min(len(filteredKeys)-1, selectedIndex+1)
 				case tcell.KeyCtrlJ, tcell.KeyCtrlN:
 					selectedIndex = max(0, selectedIndex-1)
 				case tcell.KeyRune:
-					prompt += string(ev.Rune())
+					nextPrompt += string(ev.Rune())
 					selectedIndex = 0
 				}
 			}
 			width, height := screen.Size()
-			filteredKeys = []string{}
-			for _, k := range keys {
-				if strings.Contains(k, prompt) {
-					filteredKeys = append(filteredKeys, k)
+			if nextPrompt != prompt {
+				prompt = nextPrompt
+				filteredKeys = []string{}
+				for _, k := range keys {
+					if strings.Contains(k, prompt) {
+						filteredKeys = append(filteredKeys, k)
+					}
 				}
 			}
 			screen.Clear()
