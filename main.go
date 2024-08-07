@@ -72,6 +72,7 @@ func main() {
 		}
 		fmt.Println(string(output))
 	case "interactive":
+		cachedSecrets = make(map[string]Secret)
 		slog.SetLogLoggerLevel(slog.LevelError)
 		screen, err := tcell.NewScreen()
 		if err != nil {
@@ -266,7 +267,12 @@ type Secret struct {
 	} `json:"data"`
 }
 
+var cachedSecrets map[string]Secret
+
 func (v VaultClient) getSecret(name string) (Secret, error) {
+	if secret, found := cachedSecrets[name]; found {
+		return secret, nil
+	}
 	url := fmt.Sprintf("%s/v1/%s/data%s", v.Addr, v.Mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -294,6 +300,7 @@ func (v VaultClient) getSecret(name string) (Secret, error) {
 	if response.StatusCode != 200 && isErrorForRealForReal {
 		return Secret{}, fmt.Errorf("Got %s on url %s", response.Status, url)
 	}
+	cachedSecrets[name] = secret
 	return secret, nil
 }
 
