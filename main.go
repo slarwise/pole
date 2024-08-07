@@ -340,123 +340,78 @@ func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 	y := 0
 	s.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
 	y++
-	drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), `"data": {`)
-	y++
-	i := 0
-	dataKeys := []string{}
-	for k := range secret.Data.Data {
-		dataKeys = append(dataKeys, k)
-	}
-	sort.Strings(dataKeys)
-	for _, k := range dataKeys {
-		v := secret.Data.Data[k]
-		kStr := fmt.Sprintf(`"%s": `, k)
-		drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
-		vStart := x + 4 + len(kStr)
-		switch v.(type) {
-		case string:
-			if i < len(secret.Data.Data)-1 {
-				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, v))
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, v))
+	for i := 0; i < 2; i++ {
+		keys := []string{}
+		name := ""
+		var data map[string]interface{}
+		if i == 0 {
+			data = secret.Data.Data
+			for k := range data {
+				keys = append(keys, k)
 			}
-		case []interface{}:
-			if len(v.([]interface{})) == 0 {
-				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault, "[],")
-				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault, "[]")
-				}
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault, "[")
-				y++
-				for i, element := range v.([]interface{}) {
-					if i < len(v.([]interface{}))-1 {
-						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
-					} else {
-						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
-					}
-					y++
-				}
-				drawLine(s, x+4, y, tcell.StyleDefault, "],")
+			name = "data"
+		} else {
+			data = secret.Data.Metadata
+			for k := range data {
+				keys = append(keys, k)
 			}
-		case nil:
-			if i < len(secret.Data.Data)-1 {
-				drawLine(s, vStart, y, tcell.StyleDefault, "null,")
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault, "null")
-			}
-		default:
-			if i < len(secret.Data.Data)-1 {
-				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", v))
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", v))
-			}
+			name = "metadata"
 		}
+		sort.Strings(keys)
+		drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), fmt.Sprintf(`"%s": {`, name))
 		y++
-		i++
-	}
-	s.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
-	y++
-
-	drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), `"metadata": {`)
-	y++
-	i = 0
-	metadataKeys := []string{}
-	for k := range secret.Data.Data {
-		metadataKeys = append(metadataKeys, k)
-	}
-	sort.Strings(metadataKeys)
-	for _, k := range metadataKeys {
-		v := secret.Data.Metadata[k]
-		kStr := fmt.Sprintf(`"%s": `, k)
-		drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
-		vStart := x + 4 + len(kStr)
-		switch v.(type) {
-		case string:
-			if i < len(secret.Data.Data)-1 {
-				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, v))
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, v))
-			}
-		case []interface{}:
-			if len(v.([]interface{})) == 0 {
+		i := 0
+		for _, k := range keys {
+			v := data[k]
+			kStr := fmt.Sprintf(`"%s": `, k)
+			drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
+			vStart := x + 4 + len(kStr)
+			switch v.(type) {
+			case string:
 				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault, "[],")
+					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, v))
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault, "[]")
+					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, v))
 				}
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault, "[")
-				y++
-				for i, element := range v.([]interface{}) {
-					if i < len(v.([]interface{}))-1 {
-						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
+			case []interface{}:
+				if len(v.([]interface{})) == 0 {
+					if i < len(secret.Data.Data)-1 {
+						drawLine(s, vStart, y, tcell.StyleDefault, "[],")
 					} else {
-						drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
+						drawLine(s, vStart, y, tcell.StyleDefault, "[]")
 					}
+				} else {
+					drawLine(s, vStart, y, tcell.StyleDefault, "[")
 					y++
+					for i, element := range v.([]interface{}) {
+						if i < len(v.([]interface{}))-1 {
+							drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
+						} else {
+							drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
+						}
+						y++
+					}
+					drawLine(s, x+4, y, tcell.StyleDefault, "],")
 				}
-				drawLine(s, x+4, y, tcell.StyleDefault, "],")
+			case nil:
+				if i < len(secret.Data.Data)-1 {
+					drawLine(s, vStart, y, tcell.StyleDefault, "null,")
+				} else {
+					drawLine(s, vStart, y, tcell.StyleDefault, "null")
+				}
+			default:
+				if i < len(secret.Data.Data)-1 {
+					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", v))
+				} else {
+					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", v))
+				}
 			}
-		case nil:
-			if i < len(secret.Data.Data)-1 {
-				drawLine(s, vStart, y, tcell.StyleDefault, "null,")
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault, "null")
-			}
-		default:
-			if i < len(secret.Data.Data)-1 {
-				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", v))
-			} else {
-				drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", v))
-			}
+			y++
+			i++
 		}
+		s.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
 		y++
-		i++
 	}
-	s.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
-	y++
 	s.SetContent(x, y, rune("}"[0]), nil, tcell.StyleDefault)
 }
 
