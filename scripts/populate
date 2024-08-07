@@ -1,0 +1,6 @@
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=dev-only-token
+vault kv put -mount secret /user @testdata/a.json
+vault kv put -mount secret /creds @testdata/b.json
+vault kv put -mount secret /azure/the @testdata/c.json
+vault kv put -mount secret /yolo/swag @testdata/d.json
