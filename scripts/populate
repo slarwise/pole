@@ -1,7 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 
 export VAULT_ADDR=http://127.0.0.1:8200
 export VAULT_TOKEN=dev-only-token
+
+n_arbitrary_secrets=45
 
 echo '{
 	"roles": ["reader", "writer"],
@@ -26,3 +28,17 @@ echo '{
   "client-secret": "style"
 }' |
     vault kv put -mount secret /yolo/swag -
+echo '{
+  "tenant-id": "oopa",
+  "client-id": "gangnamn",
+  "client-secret": "style"
+}' |
+    vault kv put -mount secret /if/you/can/read/the/full/path/of/this/key/you/are/the/person/in/the/red/flag/monitor/meme -
+for i in $(seq 1 "$n_arbitrary_secrets"); do
+    echo '{
+  "tenant-id": "oopa",
+  "client-id": "gangnamn",
+  "client-secret": "style"
+}' |
+        vault kv put -mount secret /secret"$i" -
+done
