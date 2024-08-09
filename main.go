@@ -462,6 +462,8 @@ func matchesPrompt(prompt, s string) (bool, int) {
 	if len(prompt) == 0 {
 		return true, 0
 	}
+	prompt = strings.ToLower(prompt)
+	s = strings.ToLower(s)
 	index := 0
 	consecutive := 0
 	previousMatched := false

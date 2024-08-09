@@ -122,6 +122,12 @@ func TestMatchesPrompt(t *testing.T) {
 			match:       true,
 			consecutive: 0,
 		},
+		"case-insensitive-match": {
+			prompt:      "user",
+			key:         "UsEr",
+			match:       true,
+			consecutive: 3,
+		},
 		"no-match": {
 			prompt:      "asdf",
 			key:         "secret",
