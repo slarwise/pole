@@ -162,7 +162,7 @@ func main() {
 				if err != nil {
 					panic("style")
 				}
-				drawSecret(screen, width, height, secret)
+				drawSecret(screen, width, secret)
 			}
 			screen.Show()
 		}
@@ -335,7 +335,7 @@ func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex in
 	}
 }
 
-func drawSecret(s tcell.Screen, width, height int, secret Secret) {
+func drawSecret(s tcell.Screen, width int, secret Secret) {
 	x := width / 2
 	y := 0
 	s.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
