@@ -148,8 +148,7 @@ func main() {
 				prompt = nextPrompt
 				filteredKeys = []string{}
 				for _, k := range keys {
-					// TODO: Match more fuzzily
-					if strings.Contains(k, prompt) {
+					if matchesPrompt(prompt, k) {
 						filteredKeys = append(filteredKeys, k)
 					}
 				}
@@ -429,4 +428,20 @@ func drawPrompt(s tcell.Screen, height int, prompt string) {
 
 func drawLoadingScreen(s tcell.Screen, height int) {
 	drawLine(s, 2, height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), "Loading...")
+}
+
+func matchesPrompt(prompt, s string) bool {
+	if len(prompt) == 0 {
+		return true
+	}
+	index := 0
+	for _, c := range []byte(s) {
+		if c == prompt[index] {
+			if index == len(prompt)-1 {
+				return true
+			}
+			index++
+		}
+	}
+	return false
 }

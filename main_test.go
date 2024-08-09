@@ -85,6 +85,56 @@ func TestGetSecret(t *testing.T) {
 	}
 }
 
+func TestMatchesPrompt(t *testing.T) {
+	tests := map[string]struct {
+		prompt   string
+		key      string
+		expected bool
+	}{
+		"match": {
+			prompt:   "set",
+			key:      "secret",
+			expected: true,
+		},
+		"match2": {
+			prompt:   "seet",
+			key:      "secret",
+			expected: true,
+		},
+		"exact-match": {
+			prompt:   "secret",
+			key:      "secret",
+			expected: true,
+		},
+		"no-match": {
+			prompt:   "asdf",
+			key:      "secret",
+			expected: false,
+		},
+		"no-match1": {
+			prompt:   "a",
+			key:      "secret",
+			expected: false,
+		},
+		"no-match2": {
+			prompt:   "seeet",
+			key:      "secret",
+			expected: false,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if matchesPrompt(test.prompt, test.key) != test.expected {
+				if test.expected {
+					t.Fatalf("Expected %s to match %s", test.prompt, test.key)
+				} else {
+					t.Fatalf("Expected %s to not match %s", test.prompt, test.key)
+				}
+			}
+		})
+	}
+}
+
 func startVault(token, addr string) (*exec.Cmd, error) {
 	cmd := exec.Command("vault", "server", "-dev", "-dev-root-token-id", token, "-address", addr)
 	if err := cmd.Start(); err != nil {
