@@ -148,6 +148,7 @@ func main() {
 				prompt = nextPrompt
 				filteredKeys = []string{}
 				for _, k := range keys {
+					// TODO: Match more fuzzily
 					if strings.Contains(k, prompt) {
 						filteredKeys = append(filteredKeys, k)
 					}
@@ -316,6 +317,7 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
+// TODO: Highlight if there are more keys above or below what is shown, like a scrollbar
 func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
 	maxHeight := height - 2
 	offset := max(0, selectedIndex-maxHeight+1)
