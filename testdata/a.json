@@ -1,5 +1,0 @@
-{
-  "roles": ["reader", "writer"],
-  "token": "abc123",
-  "url": "https://example.com"
-}

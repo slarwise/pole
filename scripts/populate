@@ -1,6 +1,27 @@
+#!/bin/sh
+
 export VAULT_ADDR=http://127.0.0.1:8200
 export VAULT_TOKEN=dev-only-token
-vault kv put -mount secret /user @testdata/a.json
-vault kv put -mount secret /creds @testdata/b.json
-vault kv put -mount secret /azure/the @testdata/c.json
-vault kv put -mount secret /yolo/swag @testdata/d.json
+
+echo '{
+	"roles": ["reader", "writer"],
+	"token": "abc123",
+	"url": "https://example.com"
+}' |
+    vault kv put -mount secret /user -
+echo '{
+  "client_id": "free",
+  "client_secret": "palestine"
+}' |
+    vault kv put -mount secret /creds -
+echo '{
+  "user": "vim",
+  "password": "actually-emacs"
+}' |
+    vault kv put -mount secret /azure/the -
+echo '{
+  "tenant-id": "oopa",
+  "client-id": "gangnamn",
+  "client-secret": "style"
+}' |
+    vault kv put -mount secret /yolo/swag -
