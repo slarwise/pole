@@ -73,7 +73,6 @@ func main() {
 		}
 		fmt.Println(string(output))
 	case "interactive":
-		cachedSecrets = make(map[string]Secret)
 		slog.SetLogLoggerLevel(slog.LevelError)
 		screen, err := tcell.NewScreen()
 		if err != nil {
@@ -273,7 +272,7 @@ type Secret struct {
 	} `json:"data"`
 }
 
-var cachedSecrets map[string]Secret
+var cachedSecrets = make(map[string]Secret)
 
 func (v VaultClient) getSecret(name string) (Secret, error) {
 	if secret, found := cachedSecrets[name]; found {
