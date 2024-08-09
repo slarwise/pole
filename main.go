@@ -28,6 +28,11 @@ func fatal(msg string, args ...any) {
 	os.Exit(1)
 }
 
+type Match struct {
+	Key                string
+	ConsecutiveMatches int
+}
+
 func main() {
 	log.SetFlags(0) // Disable the timestamp
 	vault := VaultClient{
@@ -146,11 +151,18 @@ func main() {
 			width, height := screen.Size()
 			if nextPrompt != prompt {
 				prompt = nextPrompt
-				filteredKeys = []string{}
+				matches := []Match{}
 				for _, k := range keys {
-					if matchesPrompt(prompt, k) {
-						filteredKeys = append(filteredKeys, k)
+					if match, consecutive := matchesPrompt(prompt, k); match {
+						matches = append(matches, Match{Key: k, ConsecutiveMatches: consecutive})
 					}
+				}
+				slices.SortFunc(matches, func(a, b Match) int {
+					return b.ConsecutiveMatches - a.ConsecutiveMatches
+				})
+				filteredKeys = []string{}
+				for _, m := range matches {
+					filteredKeys = append(filteredKeys, m.Key)
 				}
 			}
 			screen.Clear()
@@ -321,7 +333,6 @@ func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex in
 	maxHeight := height - 2
 	offset := max(0, selectedIndex-maxHeight+1)
 	keys = keys[offset:min(maxHeight+offset, len(keys))]
-	slices.Sort(keys)
 	y := height - 3
 	for _, line := range keys {
 		line = line[:min(width/2-2, len(line))]
@@ -430,18 +441,26 @@ func drawLoadingScreen(s tcell.Screen, height int) {
 	drawLine(s, 2, height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), "Loading...")
 }
 
-func matchesPrompt(prompt, s string) bool {
+func matchesPrompt(prompt, s string) (bool, int) {
 	if len(prompt) == 0 {
-		return true
+		return true, 0
 	}
 	index := 0
+	consecutive := 0
+	previousMatched := false
 	for _, c := range []byte(s) {
 		if c == prompt[index] {
+			if previousMatched {
+				consecutive++
+			}
+			previousMatched = true
 			if index == len(prompt)-1 {
-				return true
+				return true, consecutive
 			}
 			index++
+		} else {
+			previousMatched = false
 		}
 	}
-	return false
+	return false, 0
 }
