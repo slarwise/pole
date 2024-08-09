@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -316,13 +316,15 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-// TODO: Handle going out of bounds on the screen
 func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
-	keys = keys[:min(height-2, len(keys))]
+	maxHeight := height - 2
+	offset := max(0, selectedIndex-maxHeight+1)
+	keys = keys[offset:min(maxHeight+offset, len(keys))]
+	slices.Sort(keys)
 	y := height - 3
 	for _, line := range keys {
-		line = line[:min(width/2, len(line))]
-		if y == (height - 3 - selectedIndex) {
+		line = line[:min(width/2-2, len(line))]
+		if y == (maxHeight - 1 - selectedIndex + offset) {
 			drawLine(s, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
 			drawLine(s, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
 			drawLine(s, 2, y, tcell.StyleDefault.Background(tcell.ColorBlack), line)
@@ -355,7 +357,7 @@ func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 			}
 			name = "metadata"
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), fmt.Sprintf(`"%s": {`, name))
 		y++
 		i := 0
