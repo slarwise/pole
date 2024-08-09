@@ -78,7 +78,16 @@ func main() {
 		}
 		fmt.Println(string(output))
 	case "interactive":
-		slog.SetLogLoggerLevel(slog.LevelError)
+		if len(os.Getenv("DEBUG")) > 0 {
+			logFile, err := os.Create("./log")
+			if err != nil {
+				fatal("Failed to create log file: %s", err)
+			}
+			slog.SetDefault(slog.New(slog.NewTextHandler(logFile, nil)))
+		} else {
+			log.SetOutput(io.Discard)
+		}
+		slog.Error("yolo")
 		screen, err := tcell.NewScreen()
 		if err != nil {
 			fatal("Failed to create a terminal screen: %s", err.Error())
@@ -89,6 +98,7 @@ func main() {
 		screen.EnablePaste()
 		screen.Clear()
 		result := []byte{}
+		error := ""
 		filteredKeys := []string{}
 		quit := func() {
 			// You have to catch panics in a defer, clean up, and
@@ -101,6 +111,10 @@ func main() {
 			}
 			if len(result) != 0 {
 				fmt.Printf("%s\n", result)
+			}
+			if len(error) != 0 {
+				fmt.Fprintf(os.Stderr, "%s\n", error)
+				os.Exit(1)
 			}
 		}
 		defer quit()
@@ -125,11 +139,13 @@ func main() {
 				case tcell.KeyEnter:
 					secret, err := vault.getSecret(filteredKeys[selectedIndex])
 					if err != nil {
-						panic("oopa")
+						error = fmt.Sprintf("Failed to get secret: %s", err)
+						return
 					}
 					bytes, err := json.MarshalIndent(secret, "", "  ")
 					if err != nil {
-						panic("gangnam")
+						error = fmt.Sprintf("Failed to marshal secret: %s", err)
+						return
 					}
 					result = bytes
 					return
@@ -172,7 +188,8 @@ func main() {
 			if len(filteredKeys) > 0 {
 				secret, err := vault.getSecret(filteredKeys[selectedIndex])
 				if err != nil {
-					panic("style")
+					error = fmt.Sprintf("Failed to get secret: %s", err)
+					return
 				}
 				drawSecret(screen, width, secret)
 			}
