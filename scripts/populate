@@ -16,7 +16,8 @@ echo '{
     vault kv put -mount secret /creds -
 echo '{
   "user": "vim",
-  "password": "actually-emacs"
+  "password": "actually-emacs",
+  "pointer": "null"
 }' |
     vault kv put -mount secret /azure/the -
 echo '{

@@ -316,7 +316,7 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-// TODO: Handle going out of bounds
+// TODO: Handle going out of bounds on the screen
 func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
 	keys = keys[:min(height-2, len(keys))]
 	y := height - 3
@@ -333,7 +333,6 @@ func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex in
 	}
 }
 
-// TODO: Add color so it looks like jq-ish
 func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 	x := width / 2
 	y := 0
@@ -365,15 +364,15 @@ func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 			kStr := fmt.Sprintf(`"%s": `, k)
 			drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
 			vStart := x + 4 + len(kStr)
-			switch v.(type) {
+			switch concreteV := v.(type) {
 			case string:
 				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, v))
+					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, concreteV))
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, v))
+					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, concreteV))
 				}
 			case []interface{}:
-				if len(v.([]interface{})) == 0 {
+				if len(concreteV) == 0 {
 					if i < len(secret.Data.Data)-1 {
 						drawLine(s, vStart, y, tcell.StyleDefault, "[],")
 					} else {
@@ -382,8 +381,8 @@ func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 				} else {
 					drawLine(s, vStart, y, tcell.StyleDefault, "[")
 					y++
-					for i, element := range v.([]interface{}) {
-						if i < len(v.([]interface{}))-1 {
+					for i, element := range concreteV {
+						if i < len(concreteV)-1 {
 							drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
 						} else {
 							drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
@@ -394,15 +393,15 @@ func drawSecret(s tcell.Screen, width, height int, secret Secret) {
 				}
 			case nil:
 				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault, "null,")
+					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null,")
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault, "null")
+					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null")
 				}
 			default:
 				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", v))
+					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", concreteV))
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", v))
+					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", concreteV))
 				}
 			}
 			y++
