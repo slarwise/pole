@@ -1,9 +1,11 @@
 #!/bin/bash
 
+set -e
+
 export VAULT_ADDR=http://127.0.0.1:8200
 export VAULT_TOKEN=dev-only-token
 
-n_arbitrary_secrets=45
+n_arbitrary_secrets=${1:-45}
 
 echo '{
 	"roles": ["reader", "writer"],
