@@ -134,6 +134,8 @@ func main() {
 			case *tcell.EventResize:
 				screen.Sync()
 				// TODO: Handle redrawing the keys when resizing vertically
+				_, height := screen.Size()
+				showEnd = min(height-2, len(filteredKeys))
 			case *tcell.EventKey:
 				switch ev.Key() {
 				case tcell.KeyEscape, tcell.KeyCtrlC:
