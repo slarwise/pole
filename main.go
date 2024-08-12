@@ -81,7 +81,7 @@ func main() {
 		if len(os.Getenv("DEBUG")) > 0 {
 			logFile, err := os.Create("./log")
 			if err != nil {
-				fatal("Failed to create log file: %s", err)
+				fatal("Failed to create log file", "err", err)
 			}
 			slog.SetDefault(slog.New(slog.NewTextHandler(logFile, nil)))
 		} else {
@@ -89,10 +89,10 @@ func main() {
 		}
 		screen, err := tcell.NewScreen()
 		if err != nil {
-			fatal("Failed to create a terminal screen: %s", err.Error())
+			fatal("Failed to create a terminal screen", "err", err)
 		}
 		if err := screen.Init(); err != nil {
-			fatal("Failed to initialize terminal screen: %s", err)
+			fatal("Failed to initialize terminal screen", "err", err)
 		}
 		screen.EnablePaste()
 		screen.Clear()
