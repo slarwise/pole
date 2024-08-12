@@ -87,7 +87,6 @@ func main() {
 		} else {
 			log.SetOutput(io.Discard)
 		}
-		slog.Error("yolo")
 		screen, err := tcell.NewScreen()
 		if err != nil {
 			fatal("Failed to create a terminal screen: %s", err.Error())
@@ -183,6 +182,7 @@ func main() {
 			}
 			screen.Clear()
 			drawKeys(screen, width, height, filteredKeys, selectedIndex)
+			drawScrollbar(screen, width, height, filteredKeys, selectedIndex)
 			drawStats(screen, height, filteredKeys)
 			drawPrompt(screen, height, prompt)
 			if len(filteredKeys) > 0 {
@@ -345,14 +345,17 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-// TODO: Highlight if there are more keys above or below what is shown, like a scrollbar
+// TODO: Implement scrolloff
 func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
 	maxHeight := height - 2
 	offset := max(0, selectedIndex-maxHeight+1)
 	keys = keys[offset:min(maxHeight+offset, len(keys))]
 	y := height - 3
+	maxLength := width/2 - 2
 	for _, line := range keys {
-		line = line[:min(width/2-2, len(line))]
+		if len(line) > maxLength {
+			line = fmt.Sprintf("%s..", line[:maxLength-2])
+		}
 		if y == (maxHeight - 1 - selectedIndex + offset) {
 			drawLine(s, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
 			drawLine(s, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
@@ -364,8 +367,28 @@ func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex in
 	}
 }
 
-func drawSecret(s tcell.Screen, width int, secret Secret) {
+func drawScrollbar(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
+	maxHeight := float32(height - 2)
+	if len(keys) < int(maxHeight) {
+		return
+	}
+	offset := max(0, selectedIndex-int(maxHeight)+1)
+	nKeys := float32(len(keys))
+	start := float32(offset)
+	normieStartY := start / nKeys
+	normieH := maxHeight / nKeys
+	normieEndY := normieStartY + normieH
+	startY := int(normieStartY * maxHeight)
+	endY := int(normieEndY * maxHeight)
 	x := width / 2
+	for y := startY; y <= endY; y++ {
+		invertedY := int(maxHeight) - y
+		s.SetContent(x, invertedY, '│', nil, tcell.StyleDefault.Foreground(tcell.ColorGray))
+	}
+}
+
+func drawSecret(s tcell.Screen, width int, secret Secret) {
+	x := width/2 + 2
 	y := 0
 	s.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
 	y++
