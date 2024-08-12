@@ -126,17 +126,20 @@ func main() {
 		screen.Show()
 		keys := getKeys(vault, DirEnt{IsDir: true, Name: "/"})
 		filteredKeys = keys
+		showStart := 0
+		showEnd := min(height-2, len(filteredKeys))
 		for {
 			ev := screen.PollEvent()
 			switch ev := ev.(type) {
 			case *tcell.EventResize:
 				screen.Sync()
+				// TODO: Handle redrawing the keys when resizing vertically
 			case *tcell.EventKey:
 				switch ev.Key() {
 				case tcell.KeyEscape, tcell.KeyCtrlC:
 					return
 				case tcell.KeyEnter:
-					secret, err := vault.getSecret(filteredKeys[selectedIndex])
+					secret, err := vault.getSecret(filteredKeys[selectedIndex-showStart])
 					if err != nil {
 						error = fmt.Sprintf("Failed to get secret: %s", err)
 						return
@@ -156,8 +159,16 @@ func main() {
 					nextPrompt = ""
 				case tcell.KeyCtrlK, tcell.KeyCtrlP:
 					selectedIndex = min(len(filteredKeys)-1, selectedIndex+1)
+					if selectedIndex >= showEnd-4 && showEnd < len(filteredKeys) {
+						showStart++
+						showEnd++
+					}
 				case tcell.KeyCtrlJ, tcell.KeyCtrlN:
 					selectedIndex = max(0, selectedIndex-1)
+					if selectedIndex < showStart+4 && showStart > 0 {
+						showStart--
+						showEnd--
+					}
 				case tcell.KeyRune:
 					nextPrompt += string(ev.Rune())
 					selectedIndex = 0
@@ -179,14 +190,17 @@ func main() {
 				for _, m := range matches {
 					filteredKeys = append(filteredKeys, m.Key)
 				}
+				showStart = 0
+				showEnd = min(len(filteredKeys), height-2)
 			}
 			screen.Clear()
-			drawKeys(screen, width, height, filteredKeys, selectedIndex)
-			drawScrollbar(screen, width, height, filteredKeys, selectedIndex)
+			keysToDraw := filteredKeys[showStart:showEnd]
+			drawKeys(screen, width, height, keysToDraw, selectedIndex-showStart)
+			drawScrollbar(screen, width, height, filteredKeys, showStart)
 			drawStats(screen, height, filteredKeys)
 			drawPrompt(screen, height, prompt)
 			if len(filteredKeys) > 0 {
-				secret, err := vault.getSecret(filteredKeys[selectedIndex])
+				secret, err := vault.getSecret(filteredKeys[selectedIndex-showStart])
 				if err != nil {
 					error = fmt.Sprintf("Failed to get secret: %s", err)
 					return
@@ -345,18 +359,15 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-// TODO: Implement scrolloff
 func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
-	maxHeight := height - 2
-	offset := max(0, selectedIndex-maxHeight+1)
-	keys = keys[offset:min(maxHeight+offset, len(keys))]
-	y := height - 3
+	maxHeight := height - 3
+	y := maxHeight
 	maxLength := width/2 - 2
 	for _, line := range keys {
 		if len(line) > maxLength {
 			line = fmt.Sprintf("%s..", line[:maxLength-2])
 		}
-		if y == (maxHeight - 1 - selectedIndex + offset) {
+		if y == maxHeight-selectedIndex {
 			drawLine(s, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
 			drawLine(s, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
 			drawLine(s, 2, y, tcell.StyleDefault.Background(tcell.ColorBlack), line)
@@ -367,19 +378,21 @@ func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex in
 	}
 }
 
-func drawScrollbar(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
-	maxHeight := float32(height - 2)
+// Where should the scrollbar be shown?
+// showStart = 0, showEnd = 50 -> Start at the bottom
+// showStart = 25, showEnd = 75 -> Start at 25
+// showStart = 50, showEnd = 100 -> Start at 50
+func drawScrollbar(s tcell.Screen, width, height int, keys []string, showStart int) {
+	maxHeight := float32(height - 3)
 	if len(keys) < int(maxHeight) {
 		return
 	}
-	offset := max(0, selectedIndex-int(maxHeight)+1)
 	nKeys := float32(len(keys))
-	start := float32(offset)
-	normieStartY := start / nKeys
+	normieStartY := float32(showStart) / nKeys
 	normieH := maxHeight / nKeys
 	normieEndY := normieStartY + normieH
 	startY := int(normieStartY * maxHeight)
-	endY := int(normieEndY * maxHeight)
+	endY := int(normieEndY*maxHeight) + 1
 	x := width / 2
 	for y := startY; y <= endY; y++ {
 		invertedY := int(maxHeight) - y
