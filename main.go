@@ -33,6 +33,22 @@ type Match struct {
 	ConsecutiveMatches int
 }
 
+type State struct {
+	Screen       tcell.Screen
+	Keys         []string
+	FilteredKeys []string
+	Secret       Secret
+	Prompt       string
+	ViewStart    int
+	ViewEnd      int
+	Cursor       int
+	Width        int
+	Height       int
+	Result       []byte
+	Error        string
+	ScrollOff    int
+}
+
 func main() {
 	log.SetFlags(0) // Disable the timestamp
 	vault := VaultClient{
@@ -96,9 +112,10 @@ func main() {
 		}
 		screen.EnablePaste()
 		screen.Clear()
-		result := []byte{}
-		error := ""
-		filteredKeys := []string{}
+		state := State{
+			Screen:    screen,
+			ScrollOff: 4,
+		}
 		quit := func() {
 			// You have to catch panics in a defer, clean up, and
 			// re-raise them - otherwise your application can
@@ -108,106 +125,107 @@ func main() {
 			if maybePanic != nil {
 				panic(maybePanic)
 			}
-			if len(result) != 0 {
-				fmt.Printf("%s\n", result)
+			if len(state.Result) != 0 {
+				fmt.Printf("%s\n", state.Result)
 			}
-			if len(error) != 0 {
-				fmt.Fprintf(os.Stderr, "%s\n", error)
+			if len(state.Error) != 0 {
+				fmt.Fprintf(os.Stderr, "%s\n", state.Error)
 				os.Exit(1)
 			}
 		}
 		defer quit()
-		_, height := screen.Size()
-		prompt := ""
-		nextPrompt := ""
-		selectedIndex := 0
-		drawPrompt(screen, height, prompt)
-		drawLoadingScreen(screen, height)
+		width, height := screen.Size()
+		state.Width = width
+		state.Height = height
+		drawPrompt(state)
+		drawLoadingScreen(state)
 		screen.Show()
-		keys := getKeys(vault, DirEnt{IsDir: true, Name: "/"})
-		filteredKeys = keys
-		showStart := 0
-		showEnd := min(height-2, len(filteredKeys))
+		state.Keys = getKeys(vault, DirEnt{IsDir: true, Name: "/"})
+		state.FilteredKeys = state.Keys
+		state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
+		nextPrompt := ""
 		for {
 			ev := screen.PollEvent()
 			switch ev := ev.(type) {
 			case *tcell.EventResize:
 				screen.Sync()
-				// TODO: Handle redrawing the keys when resizing vertically
-				_, height := screen.Size()
-				showEnd = min(height-2, len(filteredKeys))
+				width, height := screen.Size()
+				state.Width = width
+				state.Height = height
+				state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
+				if state.ViewStart+state.Cursor >= state.ViewEnd {
+					state.Cursor = 0
+					state.ViewStart = 0
+				}
 			case *tcell.EventKey:
 				switch ev.Key() {
 				case tcell.KeyEscape, tcell.KeyCtrlC:
 					return
 				case tcell.KeyEnter:
-					secret, err := vault.getSecret(filteredKeys[selectedIndex-showStart])
+					bytes, err := json.MarshalIndent(state.Secret, "", "  ")
 					if err != nil {
-						error = fmt.Sprintf("Failed to get secret: %s", err)
+						state.Error = fmt.Sprintf("Failed to marshal secret: %s", err)
 						return
 					}
-					bytes, err := json.MarshalIndent(secret, "", "  ")
-					if err != nil {
-						error = fmt.Sprintf("Failed to marshal secret: %s", err)
-						return
-					}
-					result = bytes
+					state.Result = bytes
 					return
 				case tcell.KeyBackspace, tcell.KeyBackspace2:
-					if len(prompt) > 0 {
-						nextPrompt = prompt[:len(prompt)-1]
+					if len(state.Prompt) > 0 {
+						nextPrompt = state.Prompt[:len(state.Prompt)-1]
 					}
 				case tcell.KeyCtrlU:
 					nextPrompt = ""
 				case tcell.KeyCtrlK, tcell.KeyCtrlP:
-					selectedIndex = min(len(filteredKeys)-1, selectedIndex+1)
-					if selectedIndex >= showEnd-4 && showEnd < len(filteredKeys) {
-						showStart++
-						showEnd++
+					if state.ViewStart+state.Cursor+1 < len(state.FilteredKeys) {
+						if state.Cursor+1 >= nKeysToShow(state.Height)-state.ScrollOff && state.ViewEnd < len(state.FilteredKeys) {
+							moveViewPortUp(&state)
+						} else {
+							state.Cursor++
+						}
 					}
 				case tcell.KeyCtrlJ, tcell.KeyCtrlN:
-					selectedIndex = max(0, selectedIndex-1)
-					if selectedIndex < showStart+4 && showStart > 0 {
-						showStart--
-						showEnd--
+					if state.Cursor > 0 {
+						if state.Cursor-1 < state.ScrollOff && state.ViewStart > 0 {
+							moveViewPortDown(&state)
+						} else {
+							state.Cursor--
+						}
 					}
 				case tcell.KeyRune:
 					nextPrompt += string(ev.Rune())
-					selectedIndex = 0
+					state.Cursor = 0
 				}
 			}
-			width, height := screen.Size()
-			if nextPrompt != prompt {
-				prompt = nextPrompt
+			if nextPrompt != state.Prompt {
+				state.Prompt = nextPrompt
 				matches := []Match{}
-				for _, k := range keys {
-					if match, consecutive := matchesPrompt(prompt, k); match {
+				for _, k := range state.Keys {
+					if match, consecutive := matchesPrompt(state.Prompt, k); match {
 						matches = append(matches, Match{Key: k, ConsecutiveMatches: consecutive})
 					}
 				}
 				slices.SortFunc(matches, func(a, b Match) int {
 					return b.ConsecutiveMatches - a.ConsecutiveMatches
 				})
-				filteredKeys = []string{}
+				state.FilteredKeys = []string{}
 				for _, m := range matches {
-					filteredKeys = append(filteredKeys, m.Key)
+					state.FilteredKeys = append(state.FilteredKeys, m.Key)
 				}
-				showStart = 0
-				showEnd = min(len(filteredKeys), height-2)
+				state.ViewStart = 0
+				state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
 			}
 			screen.Clear()
-			keysToDraw := filteredKeys[showStart:showEnd]
-			drawKeys(screen, width, height, keysToDraw, selectedIndex-showStart)
-			drawScrollbar(screen, width, height, filteredKeys, showStart)
-			drawStats(screen, height, filteredKeys)
-			drawPrompt(screen, height, prompt)
-			if len(filteredKeys) > 0 {
-				secret, err := vault.getSecret(filteredKeys[selectedIndex-showStart])
+			drawKeys(state)
+			drawScrollbar(state)
+			drawStats(state)
+			drawPrompt(state)
+			if len(state.FilteredKeys) > 0 {
+				state.Secret, err = vault.getSecret(state.FilteredKeys[state.Cursor+state.ViewStart])
 				if err != nil {
-					error = fmt.Sprintf("Failed to get secret: %s", err)
+					state.Error = fmt.Sprintf("Failed to get secret: %s", err)
 					return
 				}
-				drawSecret(screen, width, secret)
+				drawSecret(state)
 			}
 			screen.Show()
 		}
@@ -361,139 +379,149 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-func drawKeys(s tcell.Screen, width, height int, keys []string, selectedIndex int) {
-	maxHeight := height - 3
-	y := maxHeight
-	maxLength := width/2 - 2
-	for _, line := range keys {
-		if len(line) > maxLength {
-			line = fmt.Sprintf("%s..", line[:maxLength-2])
+func drawKeys(s State) {
+	yBottom := nKeysToShow(s.Height) - 1
+	maxLength := s.Width/2 - 2
+	for i, key := range s.FilteredKeys[s.ViewStart:s.ViewEnd] {
+		keyToDraw := key
+		if len(keyToDraw) > maxLength {
+			keyToDraw = fmt.Sprintf("%s..", key[:maxLength-2])
 		}
-		if y == maxHeight-selectedIndex {
-			drawLine(s, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
-			drawLine(s, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
-			drawLine(s, 2, y, tcell.StyleDefault.Background(tcell.ColorBlack), line)
+		y := yBottom - i
+		if i == s.Cursor {
+			drawLine(s.Screen, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
+			drawLine(s.Screen, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
+			drawLine(s.Screen, 2, y, tcell.StyleDefault.Background(tcell.ColorBlack), keyToDraw)
 		} else {
-			drawLine(s, 2, y, tcell.StyleDefault, line)
+			drawLine(s.Screen, 2, y, tcell.StyleDefault, keyToDraw)
 		}
-		y--
 	}
 }
 
-// Where should the scrollbar be shown?
-// showStart = 0, showEnd = 50 -> Start at the bottom
-// showStart = 25, showEnd = 75 -> Start at 25
-// showStart = 50, showEnd = 100 -> Start at 50
-func drawScrollbar(s tcell.Screen, width, height int, keys []string, showStart int) {
-	maxHeight := float32(height - 3)
-	if len(keys) < int(maxHeight) {
+func drawScrollbar(s State) {
+	if len(s.Keys) <= nKeysToShow(s.Height) {
 		return
 	}
-	nKeys := float32(len(keys))
-	normieStartY := float32(showStart) / nKeys
-	normieH := maxHeight / nKeys
+	fullHeight := float32(nKeysToShow(s.Height) - 1)
+	nKeys := float32(len(s.Keys))
+	normieStartY := float32(s.ViewStart) / nKeys
+	normieH := fullHeight / nKeys
 	normieEndY := normieStartY + normieH
-	startY := int(normieStartY * maxHeight)
-	endY := int(normieEndY*maxHeight) + 1
-	x := width / 2
+	startY := int(normieStartY * fullHeight)
+	endY := int(normieEndY*fullHeight) + 1
+	x := s.Width / 2
 	for y := startY; y <= endY; y++ {
-		invertedY := int(maxHeight) - y
-		s.SetContent(x, invertedY, '│', nil, tcell.StyleDefault.Foreground(tcell.ColorGray))
+		invertedY := int(fullHeight) - y
+		s.Screen.SetContent(x, invertedY, '│', nil, tcell.StyleDefault.Foreground(tcell.ColorGray))
 	}
 }
 
-func drawSecret(s tcell.Screen, width int, secret Secret) {
-	x := width/2 + 2
+func drawSecret(s State) {
+	x := s.Width/2 + 2
 	y := 0
-	s.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
+	s.Screen.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
 	y++
 	for i := 0; i < 2; i++ {
 		keys := []string{}
 		name := ""
 		var data map[string]interface{}
 		if i == 0 {
-			data = secret.Data.Data
+			data = s.Secret.Data.Data
 			for k := range data {
 				keys = append(keys, k)
 			}
 			name = "data"
 		} else {
-			data = secret.Data.Metadata
+			data = s.Secret.Data.Metadata
 			for k := range data {
 				keys = append(keys, k)
 			}
 			name = "metadata"
 		}
 		slices.Sort(keys)
-		drawLine(s, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), fmt.Sprintf(`"%s": {`, name))
+		drawLine(s.Screen, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), fmt.Sprintf(`"%s": {`, name))
 		y++
 		i := 0
 		for _, k := range keys {
 			v := data[k]
 			kStr := fmt.Sprintf(`"%s": `, k)
-			drawLine(s, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
+			drawLine(s.Screen, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
 			vStart := x + 4 + len(kStr)
 			switch concreteV := v.(type) {
 			case string:
-				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, concreteV))
+				if i < len(data)-1 {
+					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, concreteV))
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, concreteV))
+					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, concreteV))
 				}
 			case []interface{}:
 				if len(concreteV) == 0 {
-					if i < len(secret.Data.Data)-1 {
-						drawLine(s, vStart, y, tcell.StyleDefault, "[],")
+					if i < len(data)-1 {
+						drawLine(s.Screen, vStart, y, tcell.StyleDefault, "[],")
 					} else {
-						drawLine(s, vStart, y, tcell.StyleDefault, "[]")
+						drawLine(s.Screen, vStart, y, tcell.StyleDefault, "[]")
 					}
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault, "[")
+					drawLine(s.Screen, vStart, y, tcell.StyleDefault, "[")
 					y++
 					for i, element := range concreteV {
 						if i < len(concreteV)-1 {
-							drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
+							drawLine(s.Screen, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
 						} else {
-							drawLine(s, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
+							drawLine(s.Screen, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
 						}
 						y++
 					}
-					drawLine(s, x+4, y, tcell.StyleDefault, "],")
+					drawLine(s.Screen, x+4, y, tcell.StyleDefault, "],")
 				}
 			case nil:
-				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null,")
+				if i < len(data)-1 {
+					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null,")
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null")
+					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null")
 				}
 			default:
-				if i < len(secret.Data.Data)-1 {
-					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", concreteV))
+				if i < len(data)-1 {
+					drawLine(s.Screen, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", concreteV))
 				} else {
-					drawLine(s, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", concreteV))
+					drawLine(s.Screen, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", concreteV))
 				}
 			}
 			y++
 			i++
 		}
-		s.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
+		s.Screen.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
 		y++
 	}
-	s.SetContent(x, y, rune("}"[0]), nil, tcell.StyleDefault)
+	s.Screen.SetContent(x, y, rune("}"[0]), nil, tcell.StyleDefault)
 }
 
-func drawStats(s tcell.Screen, height int, keys []string) {
-	nKeys := len(keys)
-	drawLine(s, 2, height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%d", nKeys))
+func drawStats(s State) {
+	nKeys := len(s.Keys)
+	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%d", nKeys))
 }
 
-func drawPrompt(s tcell.Screen, height int, prompt string) {
-	drawLine(s, 0, height-1, tcell.StyleDefault.Bold(true), ">")
-	drawLine(s, 2, height-1, tcell.StyleDefault, prompt)
+func drawPrompt(s State) {
+	drawLine(s.Screen, 0, s.Height-1, tcell.StyleDefault.Bold(true), ">")
+	drawLine(s.Screen, 2, s.Height-1, tcell.StyleDefault, s.Prompt)
 }
 
-func drawLoadingScreen(s tcell.Screen, height int) {
-	drawLine(s, 2, height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), "Loading...")
+func drawLoadingScreen(s State) {
+	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), "Loading...")
+}
+
+func nKeysToShow(windowHeight int) int {
+	return windowHeight - 2
+}
+
+func moveViewPortDown(s *State) {
+	s.ViewStart--
+	s.ViewEnd--
+}
+
+func moveViewPortUp(s *State) {
+	s.ViewStart++
+	s.ViewEnd++
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
