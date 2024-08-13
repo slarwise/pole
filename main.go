@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -156,12 +157,14 @@ func main() {
 				case tcell.KeyEscape, tcell.KeyCtrlC:
 					return
 				case tcell.KeyEnter:
-					bytes, err := json.MarshalIndent(state.Secret, "", "  ")
-					if err != nil {
-						state.Error = fmt.Sprintf("Failed to marshal secret: %s", err)
-						return
+					if !(reflect.ValueOf(state.Secret).IsZero()) {
+						bytes, err := json.MarshalIndent(state.Secret, "", "  ")
+						if err != nil {
+							state.Error = fmt.Sprintf("Failed to marshal secret: %s", err)
+							return
+						}
+						state.Result = bytes
 					}
-					state.Result = bytes
 					return
 				case tcell.KeyBackspace, tcell.KeyBackspace2:
 					if len(state.Prompt) > 0 {
@@ -406,7 +409,7 @@ func drawScrollbar(s State) {
 }
 
 func drawSecret(s State) {
-	if s.Secret.Data.Data == nil && s.Secret.Data.Metadata == nil {
+	if reflect.ValueOf(s.Secret).IsZero() {
 		return
 	}
 	x := s.Width/2 + 2
