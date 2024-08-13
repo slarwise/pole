@@ -28,11 +28,6 @@ func fatal(msg string, args ...any) {
 	os.Exit(1)
 }
 
-type Match struct {
-	Key                string
-	ConsecutiveMatches int
-}
-
 type State struct {
 	Screen       tcell.Screen
 	Keys         []string
@@ -142,8 +137,7 @@ func main() {
 		screen.Show()
 		state.Keys = getKeys(vault, DirEnt{IsDir: true, Name: "/"})
 		state.FilteredKeys = state.Keys
-		state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
-		nextPrompt := ""
+		syncKeysView(&state)
 		for {
 			ev := screen.PollEvent()
 			switch ev := ev.(type) {
@@ -171,14 +165,18 @@ func main() {
 					return
 				case tcell.KeyBackspace, tcell.KeyBackspace2:
 					if len(state.Prompt) > 0 {
-						nextPrompt = state.Prompt[:len(state.Prompt)-1]
+						state.Prompt = state.Prompt[:len(state.Prompt)-1]
+						updateFilteredKeys(&state)
+						syncKeysView(&state)
 					}
 				case tcell.KeyCtrlU:
-					nextPrompt = ""
+					state.Prompt = ""
+					updateFilteredKeys(&state)
+					syncKeysView(&state)
 				case tcell.KeyCtrlK, tcell.KeyCtrlP:
 					if state.ViewStart+state.Cursor+1 < len(state.FilteredKeys) {
 						if state.Cursor+1 >= nKeysToShow(state.Height)-state.ScrollOff && state.ViewEnd < len(state.FilteredKeys) {
-							moveViewPortUp(&state)
+							moveKeysViewUp(&state)
 						} else {
 							state.Cursor++
 						}
@@ -186,47 +184,38 @@ func main() {
 				case tcell.KeyCtrlJ, tcell.KeyCtrlN:
 					if state.Cursor > 0 {
 						if state.Cursor-1 < state.ScrollOff && state.ViewStart > 0 {
-							moveViewPortDown(&state)
+							moveKeysViewDown(&state)
 						} else {
 							state.Cursor--
 						}
 					}
 				case tcell.KeyRune:
-					nextPrompt += string(ev.Rune())
-					state.Cursor = 0
-				}
-			}
-			if nextPrompt != state.Prompt {
-				state.Prompt = nextPrompt
-				matches := []Match{}
-				for _, k := range state.Keys {
-					if match, consecutive := matchesPrompt(state.Prompt, k); match {
-						matches = append(matches, Match{Key: k, ConsecutiveMatches: consecutive})
+					state.Prompt += string(ev.Rune())
+					updateFilteredKeys(&state)
+					syncKeysView(&state)
+					if len(state.FilteredKeys) == 0 {
+						state.Cursor = 0
+					} else {
+						state.Cursor = min(state.Cursor, len(state.FilteredKeys)-1)
 					}
 				}
-				slices.SortFunc(matches, func(a, b Match) int {
-					return b.ConsecutiveMatches - a.ConsecutiveMatches
-				})
-				state.FilteredKeys = []string{}
-				for _, m := range matches {
-					state.FilteredKeys = append(state.FilteredKeys, m.Key)
-				}
-				state.ViewStart = 0
-				state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
 			}
-			screen.Clear()
-			drawKeys(state)
-			drawScrollbar(state)
-			drawStats(state)
-			drawPrompt(state)
 			if len(state.FilteredKeys) > 0 {
 				state.Secret, err = vault.getSecret(state.FilteredKeys[state.Cursor+state.ViewStart])
 				if err != nil {
 					state.Error = fmt.Sprintf("Failed to get secret: %s", err)
 					return
 				}
-				drawSecret(state)
+			} else {
+				state.Secret = Secret{}
 			}
+
+			screen.Clear()
+			drawKeys(state)
+			drawScrollbar(state)
+			drawStats(state)
+			drawPrompt(state)
+			drawSecret(state)
 			screen.Show()
 		}
 	default:
@@ -417,6 +406,9 @@ func drawScrollbar(s State) {
 }
 
 func drawSecret(s State) {
+	if s.Secret.Data.Data == nil && s.Secret.Data.Metadata == nil {
+		return
+	}
 	x := s.Width/2 + 2
 	y := 0
 	s.Screen.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
@@ -514,14 +506,40 @@ func nKeysToShow(windowHeight int) int {
 	return windowHeight - 2
 }
 
-func moveViewPortDown(s *State) {
+func moveKeysViewDown(s *State) {
 	s.ViewStart--
 	s.ViewEnd--
 }
 
-func moveViewPortUp(s *State) {
+func moveKeysViewUp(s *State) {
 	s.ViewStart++
 	s.ViewEnd++
+}
+
+type Match struct {
+	Key                string
+	ConsecutiveMatches int
+}
+
+func updateFilteredKeys(s *State) {
+	matches := []Match{}
+	for _, k := range s.Keys {
+		if match, consecutive := matchesPrompt(s.Prompt, k); match {
+			matches = append(matches, Match{Key: k, ConsecutiveMatches: consecutive})
+		}
+	}
+	slices.SortFunc(matches, func(a, b Match) int {
+		return b.ConsecutiveMatches - a.ConsecutiveMatches
+	})
+	s.FilteredKeys = []string{}
+	for _, m := range matches {
+		s.FilteredKeys = append(s.FilteredKeys, m.Key)
+	}
+}
+
+func syncKeysView(s *State) {
+	s.ViewStart = 0
+	s.ViewEnd = min(nKeysToShow(s.Height), len(s.FilteredKeys))
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
