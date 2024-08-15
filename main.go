@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/slarwise/pole3/internal/vault"
 
@@ -102,7 +101,7 @@ func main() {
 	drawPrompt(state)
 	drawLoadingScreen(state)
 	screen.Show()
-	state.Keys = getKeys(vaultClient, vault.DirEnt{IsDir: true, Name: "/"})
+	state.Keys = vault.GetKeys(vaultClient)
 	newKeysView(&state)
 	for {
 		ev := screen.PollEvent()
@@ -155,47 +154,6 @@ func main() {
 		drawSecret(state)
 		screen.Show()
 	}
-}
-
-func getKeys(vault vault.Client, entrypoint vault.DirEnt) []string {
-	recv := make(chan string)
-	go func() {
-		recurse(recv, vault, entrypoint)
-		close(recv)
-	}()
-	keys := []string{}
-	for key := range recv {
-		keys = append(keys, key)
-	}
-	return keys
-}
-
-func recurse(recv chan string, vaultClient vault.Client, entry vault.DirEnt) {
-	if !entry.IsDir {
-		recv <- entry.Name
-		return
-	}
-	relativeEntries, err := vaultClient.ListDir(entry.Name)
-	if err != nil {
-		slog.Error("Failed to list directory", "directory", entry.Name, "err", err.Error())
-		return
-	}
-	entries := []vault.DirEnt{}
-	for _, sub := range relativeEntries {
-		entries = append(entries, vault.DirEnt{
-			IsDir: sub.IsDir,
-			Name:  entry.Name + sub.Name,
-		})
-	}
-	var wg sync.WaitGroup
-	for _, e := range entries {
-		wg.Add(1)
-		go func(entry vault.DirEnt) {
-			defer wg.Done()
-			recurse(recv, vaultClient, e)
-		}(e)
-	}
-	wg.Wait()
 }
 
 func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {

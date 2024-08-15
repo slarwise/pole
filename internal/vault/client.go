@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type Client struct {
@@ -15,33 +16,78 @@ type Client struct {
 	Mount string
 }
 
-type DirEnt struct {
+type dirEnt struct {
 	IsDir bool
 	Name  string
 }
 
-func (v Client) ListDir(name string) ([]DirEnt, error) {
-	url := fmt.Sprintf("%s/v1/%s/metadata%s?list=true", v.Addr, v.Mount, name)
+func GetKeys(client Client) []string {
+	entrypoint := dirEnt{
+		IsDir: true,
+		Name:  "/",
+	}
+	recv := make(chan string)
+	go func() {
+		recurse(recv, client, entrypoint)
+		close(recv)
+	}()
+	keys := []string{}
+	for key := range recv {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func recurse(recv chan string, client Client, entry dirEnt) {
+	if !entry.IsDir {
+		recv <- entry.Name
+		return
+	}
+	relativeEntries, err := client.listDir(entry.Name)
+	if err != nil {
+		slog.Error("Failed to list directory", "directory", entry.Name, "err", err.Error())
+		return
+	}
+	entries := []dirEnt{}
+	for _, sub := range relativeEntries {
+		entries = append(entries, dirEnt{
+			IsDir: sub.IsDir,
+			Name:  entry.Name + sub.Name,
+		})
+	}
+	var wg sync.WaitGroup
+	for _, e := range entries {
+		wg.Add(1)
+		go func(entry dirEnt) {
+			defer wg.Done()
+			recurse(recv, client, e)
+		}(e)
+	}
+	wg.Wait()
+}
+
+func (c Client) listDir(name string) ([]dirEnt, error) {
+	url := fmt.Sprintf("%s/v1/%s/metadata%s?list=true", c.Addr, c.Mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return []DirEnt{}, fmt.Errorf("Failed to create request: %s", err)
+		return []dirEnt{}, fmt.Errorf("Failed to create request: %s", err)
 	}
-	request.Header.Set("X-Vault-Token", v.Token)
+	request.Header.Set("X-Vault-Token", c.Token)
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return []DirEnt{}, fmt.Errorf("Failed to perform request: %s", err)
+		return []dirEnt{}, fmt.Errorf("Failed to perform request: %s", err)
 	}
 	if response.StatusCode == 403 {
 		slog.Info("Forbidden to list dir", "dir", name, "url", url)
-		return []DirEnt{}, nil
+		return []dirEnt{}, nil
 	} else if response.StatusCode != 200 {
-		return []DirEnt{}, fmt.Errorf("Got %s on url %s", response.Status, url)
+		return []dirEnt{}, fmt.Errorf("Got %s on url %s", response.Status, url)
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return []DirEnt{}, fmt.Errorf("Failed to read response body: %s", err)
+		return []dirEnt{}, fmt.Errorf("Failed to read response body: %s", err)
 	}
 	listResponse := struct {
 		Data struct {
@@ -49,11 +95,11 @@ func (v Client) ListDir(name string) ([]DirEnt, error) {
 		}
 	}{}
 	if err := json.Unmarshal(body, &listResponse); err != nil {
-		return []DirEnt{}, fmt.Errorf("Failed to parse response body %s: %s", string(body), err)
+		return []dirEnt{}, fmt.Errorf("Failed to parse response body %s: %s", string(body), err)
 	}
-	entries := []DirEnt{}
+	entries := []dirEnt{}
 	for _, key := range listResponse.Data.Keys {
-		e := DirEnt{Name: key}
+		e := dirEnt{Name: key}
 		if strings.HasSuffix(key, "/") {
 			e.IsDir = true
 		}
@@ -71,16 +117,16 @@ type Secret struct {
 
 var cachedSecrets = make(map[string]Secret)
 
-func (v Client) GetSecret(name string) Secret {
+func (c Client) GetSecret(name string) Secret {
 	if secret, found := cachedSecrets[name]; found {
 		return secret
 	}
-	url := fmt.Sprintf("%s/v1/%s/data%s", v.Addr, v.Mount, name)
+	url := fmt.Sprintf("%s/v1/%s/data%s", c.Addr, c.Mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		panic(fmt.Errorf("Failed to create request: %s", err))
 	}
-	request.Header.Set("X-Vault-Token", v.Token)
+	request.Header.Set("X-Vault-Token", c.Token)
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
