@@ -44,6 +44,7 @@ type Ui struct {
 	Vault        vault.Client
 	Mounts       []string
 	CurrentMount int
+	ShowHelp     bool
 }
 
 const (
@@ -88,6 +89,7 @@ func main() {
 		Vault:        vaultClient,
 		Mounts:       mounts,
 		CurrentMount: 0,
+		ShowHelp:     true,
 	}
 	quit := func() {
 		// You have to catch panics in a defer, clean up, and
@@ -140,26 +142,25 @@ func main() {
 			case tcell.KeyCtrlU:
 				state.Prompt = ""
 				newKeysView(&state)
-			case tcell.KeyCtrlO:
-				state.CurrentMount = (state.CurrentMount + 1) % len(state.Mounts)
-				state.Keys = vault.GetKeys(state.Vault, state.Mounts[state.CurrentMount])
-				state.Prompt = ""
-				newKeysView(&state)
-			case tcell.KeyCtrlI:
-				if state.CurrentMount == 0 {
-					state.CurrentMount = len(state.Mounts) - 1
-				} else {
-					state.CurrentMount--
-				}
-				state.Keys = vault.GetKeys(state.Vault, state.Mounts[state.CurrentMount])
-				state.Prompt = ""
-				newKeysView(&state)
 			case tcell.KeyRune:
-				state.Prompt += string(ev.Rune())
-				newKeysView(&state)
-			case tcell.KeyCtrlK, tcell.KeyCtrlP:
+				switch ev.Rune() {
+				case '?':
+					state.ShowHelp = !state.ShowHelp
+				case ',':
+					nextMount(&state)
+				case ';':
+					previousMount(&state)
+				default:
+					state.Prompt += string(ev.Rune())
+					newKeysView(&state)
+				}
+			case tcell.KeyRight:
+				nextMount(&state)
+			case tcell.KeyLeft:
+				previousMount(&state)
+			case tcell.KeyCtrlK, tcell.KeyCtrlP, tcell.KeyUp:
 				moveUp(&state)
-			case tcell.KeyCtrlJ, tcell.KeyCtrlN:
+			case tcell.KeyCtrlJ, tcell.KeyCtrlN, tcell.KeyDown:
 				moveDown(&state)
 			}
 		}
@@ -168,6 +169,7 @@ func main() {
 		drawKeys(state)
 		drawScrollbar(state)
 		drawStats(state)
+		drawHelp(state)
 		drawPrompt(state)
 		drawSecret(state)
 		screen.Show()
@@ -281,6 +283,14 @@ func drawStats(s Ui) {
 	drawLine(s.Screen, 4, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), mountsStr)
 }
 
+func drawHelp(s Ui) {
+	if !s.ShowHelp {
+		return
+	}
+	helpStr := "Move ↑↓ Change mount ←→ Exit <Esc>"
+	drawLine(s.Screen, s.Width/2-len(helpStr)/2+4, s.Height-1, tcell.StyleDefault.Foreground(tcell.ColorRed), helpStr)
+}
+
 func drawPrompt(s Ui) {
 	drawLine(s.Screen, 0, s.Height-1, tcell.StyleDefault.Bold(true), ">")
 	drawLine(s.Screen, 2, s.Height-1, tcell.StyleDefault, s.Prompt)
@@ -353,6 +363,24 @@ func moveDown(s *Ui) {
 		}
 	}
 	setSecret(s)
+}
+
+func nextMount(s *Ui) {
+	if s.CurrentMount == 0 {
+		s.CurrentMount = len(s.Mounts) - 1
+	} else {
+		s.CurrentMount--
+	}
+	s.Keys = vault.GetKeys(s.Vault, s.Mounts[s.CurrentMount])
+	s.Prompt = ""
+	newKeysView(s)
+}
+
+func previousMount(s *Ui) {
+	s.CurrentMount = (s.CurrentMount + 1) % len(s.Mounts)
+	s.Keys = vault.GetKeys(s.Vault, s.Mounts[s.CurrentMount])
+	s.Prompt = ""
+	newKeysView(s)
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
