@@ -52,177 +52,136 @@ func main() {
 		Token: mustGetEnv("VAULT_TOKEN"),
 		Mount: mustGetEnv("VAULT_MOUNT"),
 	}
-	if len(os.Args) < 2 {
-		fatal("Must provide subcommand `tree` or `get`")
+	if len(os.Getenv("DEBUG")) > 0 {
+		logFile, err := os.Create("./log")
+		if err != nil {
+			fatal("Failed to create log file", "err", err)
+		}
+		slog.SetDefault(slog.New(slog.NewTextHandler(logFile, nil)))
+	} else {
+		log.SetOutput(io.Discard)
 	}
-	subcommand := os.Args[1]
-	switch subcommand {
-	case "tree":
-		entrypoint := "/"
-		if len(os.Args) > 2 {
-			entrypoint = os.Args[2]
-			if !strings.HasPrefix(entrypoint, "/") {
-				entrypoint = "/" + entrypoint
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		fatal("Failed to create a terminal screen", "err", err)
+	}
+	if err := screen.Init(); err != nil {
+		fatal("Failed to initialize terminal screen", "err", err)
+	}
+	screen.EnablePaste()
+	screen.Clear()
+	state := State{
+		Screen:    screen,
+		ScrollOff: 4,
+	}
+	quit := func() {
+		// You have to catch panics in a defer, clean up, and
+		// re-raise them - otherwise your application can
+		// die without leaving any diagnostic trace.
+		maybePanic := recover()
+		screen.Fini()
+		if maybePanic != nil {
+			panic(maybePanic)
+		}
+		if len(state.Result) != 0 {
+			fmt.Printf("%s\n", state.Result)
+		}
+		if len(state.Error) != 0 {
+			fmt.Fprintf(os.Stderr, "%s\n", state.Error)
+			os.Exit(1)
+		}
+	}
+	defer quit()
+	width, height := screen.Size()
+	state.Width = width
+	state.Height = height
+	drawPrompt(state)
+	drawLoadingScreen(state)
+	screen.Show()
+	state.Keys = getKeys(vault, DirEnt{IsDir: true, Name: "/"})
+	state.FilteredKeys = state.Keys
+	syncKeysView(&state)
+	for {
+		ev := screen.PollEvent()
+		switch ev := ev.(type) {
+		case *tcell.EventResize:
+			screen.Sync()
+			width, height := screen.Size()
+			state.Width = width
+			state.Height = height
+			state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
+			if state.ViewStart+state.Cursor >= state.ViewEnd {
+				state.Cursor = 0
+				state.ViewStart = 0
 			}
-			if !strings.HasSuffix(entrypoint, "/") {
-				entrypoint += "/"
-			}
-		}
-		keys := getKeys(vault, DirEnt{IsDir: true, Name: entrypoint})
-		for _, key := range keys {
-			fmt.Println(key)
-		}
-	case "get":
-		if len(os.Args) < 3 {
-			fatal("Must provide the name of the secret, e.g. ./pole3 get my-secret")
-		}
-		key := os.Args[2]
-		if !strings.HasPrefix(key, "/") {
-			key = "/" + key
-		}
-		secret, err := vault.getSecret(key)
-		if err != nil {
-			fatal("Failed to get secret", "key", key, "err", err)
-		}
-		output, err := json.MarshalIndent(secret, "", "  ")
-		if err != nil {
-			fatal("Could not marshal secret as json", "error", err)
-		}
-		fmt.Println(string(output))
-	case "interactive":
-		if len(os.Getenv("DEBUG")) > 0 {
-			logFile, err := os.Create("./log")
-			if err != nil {
-				fatal("Failed to create log file", "err", err)
-			}
-			slog.SetDefault(slog.New(slog.NewTextHandler(logFile, nil)))
-		} else {
-			log.SetOutput(io.Discard)
-		}
-		screen, err := tcell.NewScreen()
-		if err != nil {
-			fatal("Failed to create a terminal screen", "err", err)
-		}
-		if err := screen.Init(); err != nil {
-			fatal("Failed to initialize terminal screen", "err", err)
-		}
-		screen.EnablePaste()
-		screen.Clear()
-		state := State{
-			Screen:    screen,
-			ScrollOff: 4,
-		}
-		quit := func() {
-			// You have to catch panics in a defer, clean up, and
-			// re-raise them - otherwise your application can
-			// die without leaving any diagnostic trace.
-			maybePanic := recover()
-			screen.Fini()
-			if maybePanic != nil {
-				panic(maybePanic)
-			}
-			if len(state.Result) != 0 {
-				fmt.Printf("%s\n", state.Result)
-			}
-			if len(state.Error) != 0 {
-				fmt.Fprintf(os.Stderr, "%s\n", state.Error)
-				os.Exit(1)
-			}
-		}
-		defer quit()
-		width, height := screen.Size()
-		state.Width = width
-		state.Height = height
-		drawPrompt(state)
-		drawLoadingScreen(state)
-		screen.Show()
-		state.Keys = getKeys(vault, DirEnt{IsDir: true, Name: "/"})
-		state.FilteredKeys = state.Keys
-		syncKeysView(&state)
-		for {
-			ev := screen.PollEvent()
-			switch ev := ev.(type) {
-			case *tcell.EventResize:
-				screen.Sync()
-				width, height := screen.Size()
-				state.Width = width
-				state.Height = height
-				state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
-				if state.ViewStart+state.Cursor >= state.ViewEnd {
-					state.Cursor = 0
-					state.ViewStart = 0
+		case *tcell.EventKey:
+			switch ev.Key() {
+			case tcell.KeyEscape, tcell.KeyCtrlC:
+				return
+			case tcell.KeyEnter:
+				if !(reflect.ValueOf(state.Secret).IsZero()) {
+					bytes, err := json.MarshalIndent(state.Secret, "", "  ")
+					if err != nil {
+						state.Error = fmt.Sprintf("Failed to marshal secret: %s", err)
+						return
+					}
+					state.Result = bytes
 				}
-			case *tcell.EventKey:
-				switch ev.Key() {
-				case tcell.KeyEscape, tcell.KeyCtrlC:
-					return
-				case tcell.KeyEnter:
-					if !(reflect.ValueOf(state.Secret).IsZero()) {
-						bytes, err := json.MarshalIndent(state.Secret, "", "  ")
-						if err != nil {
-							state.Error = fmt.Sprintf("Failed to marshal secret: %s", err)
-							return
-						}
-						state.Result = bytes
-					}
-					return
-				case tcell.KeyBackspace, tcell.KeyBackspace2:
-					if len(state.Prompt) > 0 {
-						state.Prompt = state.Prompt[:len(state.Prompt)-1]
-						updateFilteredKeys(&state)
-						syncKeysView(&state)
-					}
-				case tcell.KeyCtrlU:
-					state.Prompt = ""
+				return
+			case tcell.KeyBackspace, tcell.KeyBackspace2:
+				if len(state.Prompt) > 0 {
+					state.Prompt = state.Prompt[:len(state.Prompt)-1]
 					updateFilteredKeys(&state)
 					syncKeysView(&state)
-				case tcell.KeyCtrlK, tcell.KeyCtrlP:
-					if state.ViewStart+state.Cursor+1 < len(state.FilteredKeys) {
-						if state.Cursor+1 >= nKeysToShow(state.Height)-state.ScrollOff && state.ViewEnd < len(state.FilteredKeys) {
-							moveKeysViewUp(&state)
-						} else {
-							state.Cursor++
-						}
-					}
-				case tcell.KeyCtrlJ, tcell.KeyCtrlN:
-					if state.Cursor > 0 {
-						if state.Cursor-1 < state.ScrollOff && state.ViewStart > 0 {
-							moveKeysViewDown(&state)
-						} else {
-							state.Cursor--
-						}
-					}
-				case tcell.KeyRune:
-					state.Prompt += string(ev.Rune())
-					updateFilteredKeys(&state)
-					syncKeysView(&state)
-					if len(state.FilteredKeys) == 0 {
-						state.Cursor = 0
+				}
+			case tcell.KeyCtrlU:
+				state.Prompt = ""
+				updateFilteredKeys(&state)
+				syncKeysView(&state)
+			case tcell.KeyCtrlK, tcell.KeyCtrlP:
+				if state.ViewStart+state.Cursor+1 < len(state.FilteredKeys) {
+					if state.Cursor+1 >= nKeysToShow(state.Height)-state.ScrollOff && state.ViewEnd < len(state.FilteredKeys) {
+						moveKeysViewUp(&state)
 					} else {
-						state.Cursor = min(state.Cursor, len(state.FilteredKeys)-1)
+						state.Cursor++
 					}
 				}
-			}
-			if len(state.FilteredKeys) > 0 {
-				state.Secret, err = vault.getSecret(state.FilteredKeys[state.Cursor+state.ViewStart])
-				if err != nil {
-					state.Error = fmt.Sprintf("Failed to get secret: %s", err)
-					return
+			case tcell.KeyCtrlJ, tcell.KeyCtrlN:
+				if state.Cursor > 0 {
+					if state.Cursor-1 < state.ScrollOff && state.ViewStart > 0 {
+						moveKeysViewDown(&state)
+					} else {
+						state.Cursor--
+					}
 				}
-			} else {
-				state.Secret = Secret{}
+			case tcell.KeyRune:
+				state.Prompt += string(ev.Rune())
+				updateFilteredKeys(&state)
+				syncKeysView(&state)
+				if len(state.FilteredKeys) == 0 {
+					state.Cursor = 0
+				} else {
+					state.Cursor = min(state.Cursor, len(state.FilteredKeys)-1)
+				}
 			}
-
-			screen.Clear()
-			drawKeys(state)
-			drawScrollbar(state)
-			drawStats(state)
-			drawPrompt(state)
-			drawSecret(state)
-			screen.Show()
 		}
-	default:
-		fatal(fmt.Sprintf("Subcommand must be one of `tree` or `get`, got %s", subcommand))
+		if len(state.FilteredKeys) > 0 {
+			state.Secret, err = vault.getSecret(state.FilteredKeys[state.Cursor+state.ViewStart])
+			if err != nil {
+				state.Error = fmt.Sprintf("Failed to get secret: %s", err)
+				return
+			}
+		} else {
+			state.Secret = Secret{}
+		}
+
+		screen.Clear()
+		drawKeys(state)
+		drawScrollbar(state)
+		drawStats(state)
+		drawPrompt(state)
+		drawSecret(state)
+		screen.Show()
 	}
 }
 
