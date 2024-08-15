@@ -53,7 +53,7 @@ const (
 
 var (
 	STYLE_KEY     = tcell.StyleDefault.Foreground(tcell.ColorBlue)
-	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorPink)
+	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorGreen)
 	STYLE_NULL    = tcell.StyleDefault.Foreground(tcell.ColorGray)
 	STYLE_DEFAULT = tcell.StyleDefault
 )
@@ -297,7 +297,7 @@ func drawPrompt(s Ui) {
 }
 
 func drawLoadingScreen(s Ui) {
-	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), "Loading...")
+	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%-*s", s.Width-2, "Loading..."))
 }
 
 func nKeysToShow(windowHeight int) int {
@@ -371,6 +371,8 @@ func nextMount(s *Ui) {
 	} else {
 		s.CurrentMount--
 	}
+	drawLoadingScreen(*s)
+	s.Screen.Show()
 	s.Keys = vault.GetKeys(s.Vault, s.Mounts[s.CurrentMount])
 	s.Prompt = ""
 	newKeysView(s)
@@ -378,6 +380,8 @@ func nextMount(s *Ui) {
 
 func previousMount(s *Ui) {
 	s.CurrentMount = (s.CurrentMount + 1) % len(s.Mounts)
+	drawLoadingScreen(*s)
+	s.Screen.Show()
 	s.Keys = vault.GetKeys(s.Vault, s.Mounts[s.CurrentMount])
 	s.Prompt = ""
 	newKeysView(s)
