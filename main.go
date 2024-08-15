@@ -29,7 +29,7 @@ func fatal(msg string, args ...any) {
 	os.Exit(1)
 }
 
-type State struct {
+type Ui struct {
 	Screen       tcell.Screen
 	Keys         []string
 	FilteredKeys []string
@@ -42,8 +42,10 @@ type State struct {
 	Height       int
 	Result       []byte
 	Error        string
-	ScrollOff    int
+	Vault        VaultClient
 }
+
+const SCROLL_OFF = 4
 
 func main() {
 	log.SetFlags(0) // Disable the timestamp
@@ -70,9 +72,9 @@ func main() {
 	}
 	screen.EnablePaste()
 	screen.Clear()
-	state := State{
-		Screen:    screen,
-		ScrollOff: 4,
+	state := Ui{
+		Screen: screen,
+		Vault:  vault,
 	}
 	quit := func() {
 		// You have to catch panics in a defer, clean up, and
@@ -99,16 +101,15 @@ func main() {
 	drawLoadingScreen(state)
 	screen.Show()
 	state.Keys = getKeys(vault, DirEnt{IsDir: true, Name: "/"})
-	state.FilteredKeys = state.Keys
-	syncKeysView(&state)
+	if err := newKeysView(&state); err != nil {
+		return
+	}
 	for {
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
 			screen.Sync()
-			width, height := screen.Size()
-			state.Width = width
-			state.Height = height
+			state.Width, state.Height = screen.Size()
 			state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
 			if state.ViewStart+state.Cursor >= state.ViewEnd {
 				state.Cursor = 0
@@ -131,48 +132,29 @@ func main() {
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
 				if len(state.Prompt) > 0 {
 					state.Prompt = state.Prompt[:len(state.Prompt)-1]
-					updateFilteredKeys(&state)
-					syncKeysView(&state)
+					if err := newKeysView(&state); err != nil {
+						return
+					}
 				}
 			case tcell.KeyCtrlU:
 				state.Prompt = ""
-				updateFilteredKeys(&state)
-				syncKeysView(&state)
-			case tcell.KeyCtrlK, tcell.KeyCtrlP:
-				if state.ViewStart+state.Cursor+1 < len(state.FilteredKeys) {
-					if state.Cursor+1 >= nKeysToShow(state.Height)-state.ScrollOff && state.ViewEnd < len(state.FilteredKeys) {
-						moveKeysViewUp(&state)
-					} else {
-						state.Cursor++
-					}
-				}
-			case tcell.KeyCtrlJ, tcell.KeyCtrlN:
-				if state.Cursor > 0 {
-					if state.Cursor-1 < state.ScrollOff && state.ViewStart > 0 {
-						moveKeysViewDown(&state)
-					} else {
-						state.Cursor--
-					}
+				if err := newKeysView(&state); err != nil {
+					return
 				}
 			case tcell.KeyRune:
 				state.Prompt += string(ev.Rune())
-				updateFilteredKeys(&state)
-				syncKeysView(&state)
-				if len(state.FilteredKeys) == 0 {
-					state.Cursor = 0
-				} else {
-					state.Cursor = min(state.Cursor, len(state.FilteredKeys)-1)
+				if err := newKeysView(&state); err != nil {
+					return
+				}
+			case tcell.KeyCtrlK, tcell.KeyCtrlP:
+				if err := moveUp(&state); err != nil {
+					return
+				}
+			case tcell.KeyCtrlJ, tcell.KeyCtrlN:
+				if err := moveDown(&state); err != nil {
+					return
 				}
 			}
-		}
-		if len(state.FilteredKeys) > 0 {
-			state.Secret, err = vault.getSecret(state.FilteredKeys[state.Cursor+state.ViewStart])
-			if err != nil {
-				state.Error = fmt.Sprintf("Failed to get secret: %s", err)
-				return
-			}
-		} else {
-			state.Secret = Secret{}
 		}
 
 		screen.Clear()
@@ -330,7 +312,7 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-func drawKeys(s State) {
+func drawKeys(s Ui) {
 	yBottom := nKeysToShow(s.Height) - 1
 	maxLength := s.Width/2 - 2
 	for i, key := range s.FilteredKeys[s.ViewStart:s.ViewEnd] {
@@ -349,7 +331,7 @@ func drawKeys(s State) {
 	}
 }
 
-func drawScrollbar(s State) {
+func drawScrollbar(s Ui) {
 	if len(s.Keys) <= nKeysToShow(s.Height) {
 		return
 	}
@@ -367,7 +349,7 @@ func drawScrollbar(s State) {
 	}
 }
 
-func drawSecret(s State) {
+func drawSecret(s Ui) {
 	if reflect.ValueOf(s.Secret).IsZero() {
 		return
 	}
@@ -450,17 +432,17 @@ func drawSecret(s State) {
 	s.Screen.SetContent(x, y, rune("}"[0]), nil, tcell.StyleDefault)
 }
 
-func drawStats(s State) {
+func drawStats(s Ui) {
 	nKeys := len(s.Keys)
 	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%d", nKeys))
 }
 
-func drawPrompt(s State) {
+func drawPrompt(s Ui) {
 	drawLine(s.Screen, 0, s.Height-1, tcell.StyleDefault.Bold(true), ">")
 	drawLine(s.Screen, 2, s.Height-1, tcell.StyleDefault, s.Prompt)
 }
 
-func drawLoadingScreen(s State) {
+func drawLoadingScreen(s Ui) {
 	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), "Loading...")
 }
 
@@ -468,22 +450,12 @@ func nKeysToShow(windowHeight int) int {
 	return windowHeight - 2
 }
 
-func moveKeysViewDown(s *State) {
-	s.ViewStart--
-	s.ViewEnd--
-}
-
-func moveKeysViewUp(s *State) {
-	s.ViewStart++
-	s.ViewEnd++
-}
-
 type Match struct {
 	Key                string
 	ConsecutiveMatches int
 }
 
-func updateFilteredKeys(s *State) {
+func newKeysView(s *Ui) error {
 	matches := []Match{}
 	for _, k := range s.Keys {
 		if match, consecutive := matchesPrompt(s.Prompt, k); match {
@@ -497,11 +469,51 @@ func updateFilteredKeys(s *State) {
 	for _, m := range matches {
 		s.FilteredKeys = append(s.FilteredKeys, m.Key)
 	}
-}
-
-func syncKeysView(s *State) {
 	s.ViewStart = 0
 	s.ViewEnd = min(nKeysToShow(s.Height), len(s.FilteredKeys))
+	if len(s.FilteredKeys) == 0 {
+		s.Cursor = 0
+	} else {
+		s.Cursor = min(s.Cursor, len(s.FilteredKeys)-1)
+	}
+	return setSecret(s)
+}
+
+func setSecret(s *Ui) error {
+	if len(s.FilteredKeys) > 0 {
+		secret, err := s.Vault.getSecret(s.FilteredKeys[s.ViewStart+s.Cursor])
+		if err != nil {
+			return fmt.Errorf("Failed to get secret: %s", err)
+		}
+		s.Secret = secret
+	} else {
+		s.Secret = Secret{}
+	}
+	return nil
+}
+
+func moveUp(s *Ui) error {
+	if s.ViewStart+s.Cursor+1 < len(s.FilteredKeys) {
+		if s.Cursor+1 >= nKeysToShow(s.Height)-SCROLL_OFF && s.ViewEnd < len(s.FilteredKeys) {
+			s.ViewStart++
+			s.ViewEnd++
+		} else {
+			s.Cursor++
+		}
+	}
+	return setSecret(s)
+}
+
+func moveDown(s *Ui) error {
+	if s.Cursor > 0 {
+		if s.Cursor-1 < SCROLL_OFF && s.ViewStart > 0 {
+			s.ViewStart--
+			s.ViewEnd--
+		} else {
+			s.Cursor--
+		}
+	}
+	return setSecret(s)
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
