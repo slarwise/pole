@@ -41,7 +41,6 @@ type Ui struct {
 	Width        int
 	Height       int
 	Result       []byte
-	Error        string
 	Vault        VaultClient
 }
 
@@ -80,17 +79,12 @@ func main() {
 		// You have to catch panics in a defer, clean up, and
 		// re-raise them - otherwise your application can
 		// die without leaving any diagnostic trace.
-		maybePanic := recover()
+		errorMsg := recover()
 		screen.Fini()
-		if maybePanic != nil {
-			panic(maybePanic)
-		}
-		if len(state.Result) != 0 {
+		if errorMsg != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", errorMsg)
+		} else if len(state.Result) != 0 {
 			fmt.Printf("%s\n", state.Result)
-		}
-		if len(state.Error) != 0 {
-			fmt.Fprintf(os.Stderr, "%s\n", state.Error)
-			os.Exit(1)
 		}
 	}
 	defer quit()
@@ -101,9 +95,7 @@ func main() {
 	drawLoadingScreen(state)
 	screen.Show()
 	state.Keys = getKeys(vault, DirEnt{IsDir: true, Name: "/"})
-	if err := newKeysView(&state); err != nil {
-		return
-	}
+	newKeysView(&state)
 	for {
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
@@ -123,8 +115,7 @@ func main() {
 				if !(reflect.ValueOf(state.Secret).IsZero()) {
 					bytes, err := json.MarshalIndent(state.Secret, "", "  ")
 					if err != nil {
-						state.Error = fmt.Sprintf("Failed to marshal secret: %s", err)
-						return
+						panic(fmt.Sprintf("Failed to marshal secret: %s", err))
 					}
 					state.Result = bytes
 				}
@@ -132,28 +123,18 @@ func main() {
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
 				if len(state.Prompt) > 0 {
 					state.Prompt = state.Prompt[:len(state.Prompt)-1]
-					if err := newKeysView(&state); err != nil {
-						return
-					}
+					newKeysView(&state)
 				}
 			case tcell.KeyCtrlU:
 				state.Prompt = ""
-				if err := newKeysView(&state); err != nil {
-					return
-				}
+				newKeysView(&state)
 			case tcell.KeyRune:
 				state.Prompt += string(ev.Rune())
-				if err := newKeysView(&state); err != nil {
-					return
-				}
+				newKeysView(&state)
 			case tcell.KeyCtrlK, tcell.KeyCtrlP:
-				if err := moveUp(&state); err != nil {
-					return
-				}
+				moveUp(&state)
 			case tcell.KeyCtrlJ, tcell.KeyCtrlN:
-				if err := moveDown(&state); err != nil {
-					return
-				}
+				moveDown(&state)
 			}
 		}
 
@@ -270,26 +251,26 @@ type Secret struct {
 
 var cachedSecrets = make(map[string]Secret)
 
-func (v VaultClient) getSecret(name string) (Secret, error) {
+func (v VaultClient) getSecret(name string) Secret {
 	if secret, found := cachedSecrets[name]; found {
-		return secret, nil
+		return secret
 	}
 	url := fmt.Sprintf("%s/v1/%s/data%s", v.Addr, v.Mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return Secret{}, fmt.Errorf("Failed to create request: %s", err)
+		panic(fmt.Errorf("Failed to create request: %s", err))
 	}
 	request.Header.Set("X-Vault-Token", v.Token)
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return Secret{}, fmt.Errorf("Failed to perform request: %s", err)
+		panic(fmt.Errorf("Failed to perform request: %s", err))
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
 	var secret Secret
 	if err := json.Unmarshal(body, &secret); err != nil {
-		return Secret{}, fmt.Errorf("Failed to unmarshal response body %s: %s", string(body), err.Error())
+		panic(fmt.Errorf("Failed to unmarshal response body %s: %s", string(body), err.Error()))
 	}
 	// 404 can mean that the secret has been deleted, but it will still
 	// be listed. Supposedly all status codes above 400 return an
@@ -299,10 +280,10 @@ func (v VaultClient) getSecret(name string) (Secret, error) {
 	// https://developer.hashicorp.com/vault/api-docs#error-response
 	isErrorForRealForReal := secret.Data.Data == nil && secret.Data.Metadata == nil
 	if response.StatusCode != 200 && isErrorForRealForReal {
-		return Secret{}, fmt.Errorf("Got %s on url %s", response.Status, url)
+		panic(fmt.Errorf("Got %s on url %s", response.Status, url))
 	}
 	cachedSecrets[name] = secret
-	return secret, nil
+	return secret
 }
 
 func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
@@ -455,7 +436,7 @@ type Match struct {
 	ConsecutiveMatches int
 }
 
-func newKeysView(s *Ui) error {
+func newKeysView(s *Ui) {
 	matches := []Match{}
 	for _, k := range s.Keys {
 		if match, consecutive := matchesPrompt(s.Prompt, k); match {
@@ -476,23 +457,18 @@ func newKeysView(s *Ui) error {
 	} else {
 		s.Cursor = min(s.Cursor, len(s.FilteredKeys)-1)
 	}
-	return setSecret(s)
+	setSecret(s)
 }
 
-func setSecret(s *Ui) error {
+func setSecret(s *Ui) {
 	if len(s.FilteredKeys) > 0 {
-		secret, err := s.Vault.getSecret(s.FilteredKeys[s.ViewStart+s.Cursor])
-		if err != nil {
-			return fmt.Errorf("Failed to get secret: %s", err)
-		}
-		s.Secret = secret
+		s.Secret = s.Vault.getSecret(s.FilteredKeys[s.ViewStart+s.Cursor])
 	} else {
 		s.Secret = Secret{}
 	}
-	return nil
 }
 
-func moveUp(s *Ui) error {
+func moveUp(s *Ui) {
 	if s.ViewStart+s.Cursor+1 < len(s.FilteredKeys) {
 		if s.Cursor+1 >= nKeysToShow(s.Height)-SCROLL_OFF && s.ViewEnd < len(s.FilteredKeys) {
 			s.ViewStart++
@@ -501,10 +477,10 @@ func moveUp(s *Ui) error {
 			s.Cursor++
 		}
 	}
-	return setSecret(s)
+	setSecret(s)
 }
 
-func moveDown(s *Ui) error {
+func moveDown(s *Ui) {
 	if s.Cursor > 0 {
 		if s.Cursor-1 < SCROLL_OFF && s.ViewStart > 0 {
 			s.ViewStart--
@@ -513,7 +489,7 @@ func moveDown(s *Ui) error {
 			s.Cursor--
 		}
 	}
-	return setSecret(s)
+	setSecret(s)
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
