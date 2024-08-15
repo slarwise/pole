@@ -45,7 +45,16 @@ type Ui struct {
 	Vault        vault.Client
 }
 
-const SCROLL_OFF = 4
+const (
+	SCROLL_OFF = 4
+)
+
+var (
+	STYLE_KEY     = tcell.StyleDefault.Foreground(tcell.ColorBlue)
+	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	STYLE_NULL    = tcell.StyleDefault.Foreground(tcell.ColorGray)
+	STYLE_DEFAULT = tcell.StyleDefault
+)
 
 func main() {
 	log.SetFlags(0) // Disable the timestamp
@@ -239,81 +248,47 @@ func drawSecret(s Ui) {
 	}
 	x := s.Width/2 + 2
 	y := 0
-	s.Screen.SetContent(x, y, rune("{"[0]), nil, tcell.StyleDefault)
-	y++
-	for i := 0; i < 2; i++ {
-		keys := []string{}
-		name := ""
-		var data map[string]interface{}
-		if i == 0 {
-			data = s.Secret.Data.Data
-			for k := range data {
-				keys = append(keys, k)
-			}
-			name = "data"
-		} else {
-			data = s.Secret.Data.Metadata
-			for k := range data {
-				keys = append(keys, k)
-			}
-			name = "metadata"
-		}
-		slices.Sort(keys)
-		drawLine(s.Screen, x+2, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), fmt.Sprintf(`"%s": {`, name))
-		y++
-		i := 0
-		for _, k := range keys {
-			v := data[k]
-			kStr := fmt.Sprintf(`"%s": `, k)
-			drawLine(s.Screen, x+4, y, tcell.StyleDefault.Foreground(tcell.ColorBlue), kStr)
-			vStart := x + 4 + len(kStr)
-			switch concreteV := v.(type) {
-			case string:
-				if i < len(data)-1 {
-					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, concreteV))
-				} else {
-					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, concreteV))
-				}
-			case []interface{}:
-				if len(concreteV) == 0 {
-					if i < len(data)-1 {
-						drawLine(s.Screen, vStart, y, tcell.StyleDefault, "[],")
-					} else {
-						drawLine(s.Screen, vStart, y, tcell.StyleDefault, "[]")
-					}
-				} else {
-					drawLine(s.Screen, vStart, y, tcell.StyleDefault, "[")
-					y++
-					for i, element := range concreteV {
-						if i < len(concreteV)-1 {
-							drawLine(s.Screen, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s",`, element.(string)))
-						} else {
-							drawLine(s.Screen, x+6, y, tcell.StyleDefault.Foreground(tcell.ColorGreen), fmt.Sprintf(`"%s"`, element.(string)))
-						}
-						y++
-					}
-					drawLine(s.Screen, x+4, y, tcell.StyleDefault, "],")
-				}
-			case nil:
-				if i < len(data)-1 {
-					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null,")
-				} else {
-					drawLine(s.Screen, vStart, y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null")
-				}
-			default:
-				if i < len(data)-1 {
-					drawLine(s.Screen, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v,", concreteV))
-				} else {
-					drawLine(s.Screen, vStart, y, tcell.StyleDefault, fmt.Sprintf("%v", concreteV))
-				}
-			}
-			y++
-			i++
-		}
-		s.Screen.SetContent(x+2, y, rune("}"[0]), nil, tcell.StyleDefault)
-		y++
+	drawData(s.Screen, x, &y, "data", s.Secret.Data.Data)
+	drawData(s.Screen, x, &y, "metadata", s.Secret.Data.Metadata)
+}
+
+func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}) {
+	keys := []string{}
+	for k := range data {
+		keys = append(keys, k)
 	}
-	s.Screen.SetContent(x, y, rune("}"[0]), nil, tcell.StyleDefault)
+	slices.Sort(keys)
+	kToDraw := fmt.Sprintf(`%s: `, name)
+	drawLine(s, x, *y, STYLE_KEY, kToDraw)
+	*y++
+	for _, k := range keys {
+		kToDraw := fmt.Sprintf(`%s: `, k)
+		drawLine(s, x+2, *y, STYLE_KEY, kToDraw)
+		vStart := x + 2 + len(kToDraw)
+		v := data[k]
+		switch vForReal := v.(type) {
+		case string:
+			drawLine(s, vStart, *y, STYLE_STRING, vForReal)
+			*y++
+		case []interface{}:
+			if len(vForReal) == 0 {
+				drawLine(s, vStart, *y, STYLE_DEFAULT, "[]")
+			} else {
+				*y++
+				for _, e := range vForReal {
+					drawLine(s, x+4, *y, STYLE_DEFAULT, "- ")
+					drawLine(s, x+6, *y, STYLE_STRING, e.(string))
+					*y++
+				}
+			}
+		case nil:
+			drawLine(s, vStart, *y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null")
+			*y++
+		default:
+			drawLine(s, vStart, *y, tcell.StyleDefault, fmt.Sprintf("%v", vForReal))
+			*y++
+		}
+	}
 }
 
 func drawStats(s Ui) {
