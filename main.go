@@ -203,11 +203,11 @@ func drawKeys(s Ui) {
 }
 
 func drawScrollbar(s Ui) {
-	if len(s.Keys) <= nKeysToShow(s.Height) {
+	if len(s.FilteredKeys) <= nKeysToShow(s.Height) {
 		return
 	}
 	fullHeight := float32(nKeysToShow(s.Height) - 1)
-	nKeys := float32(len(s.Keys))
+	nKeys := float32(len(s.FilteredKeys))
 	normieStartY := float32(s.ViewStart) / nKeys
 	normieH := fullHeight / nKeys
 	normieEndY := normieStartY + normieH
