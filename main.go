@@ -42,6 +42,8 @@ type Ui struct {
 	Height       int
 	Result       []byte
 	Vault        vault.Client
+	Mounts       []string
+	CurrentMount int
 }
 
 const (
@@ -50,7 +52,7 @@ const (
 
 var (
 	STYLE_KEY     = tcell.StyleDefault.Foreground(tcell.ColorBlue)
-	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorPink)
 	STYLE_NULL    = tcell.StyleDefault.Foreground(tcell.ColorGray)
 	STYLE_DEFAULT = tcell.StyleDefault
 )
@@ -60,8 +62,9 @@ func main() {
 	vaultClient := vault.Client{
 		Addr:  mustGetEnv("VAULT_ADDR"),
 		Token: mustGetEnv("VAULT_TOKEN"),
-		Mount: mustGetEnv("VAULT_MOUNT"),
 	}
+	mounts := []string{}
+	mounts = vaultClient.GetMounts()
 	if len(os.Getenv("DEBUG")) > 0 {
 		logFile, err := os.Create("./log")
 		if err != nil {
@@ -81,8 +84,10 @@ func main() {
 	screen.EnablePaste()
 	screen.Clear()
 	state := Ui{
-		Screen: screen,
-		Vault:  vaultClient,
+		Screen:       screen,
+		Vault:        vaultClient,
+		Mounts:       mounts,
+		CurrentMount: 0,
 	}
 	quit := func() {
 		// You have to catch panics in a defer, clean up, and
@@ -101,7 +106,7 @@ func main() {
 	drawPrompt(state)
 	drawLoadingScreen(state)
 	screen.Show()
-	state.Keys = vault.GetKeys(vaultClient)
+	state.Keys = vault.GetKeys(vaultClient, state.Mounts[state.CurrentMount])
 	newKeysView(&state)
 	for {
 		ev := screen.PollEvent()
@@ -115,7 +120,6 @@ func main() {
 				state.ViewStart = 0
 			}
 		case *tcell.EventKey:
-			// TODO: Add ability to switch between key-value vault mounts
 			switch ev.Key() {
 			case tcell.KeyEscape, tcell.KeyCtrlC:
 				return
@@ -134,6 +138,20 @@ func main() {
 					newKeysView(&state)
 				}
 			case tcell.KeyCtrlU:
+				state.Prompt = ""
+				newKeysView(&state)
+			case tcell.KeyCtrlO:
+				state.CurrentMount = (state.CurrentMount + 1) % len(state.Mounts)
+				state.Keys = vault.GetKeys(state.Vault, state.Mounts[state.CurrentMount])
+				state.Prompt = ""
+				newKeysView(&state)
+			case tcell.KeyCtrlI:
+				if state.CurrentMount == 0 {
+					state.CurrentMount = len(state.Mounts) - 1
+				} else {
+					state.CurrentMount--
+				}
+				state.Keys = vault.GetKeys(state.Vault, state.Mounts[state.CurrentMount])
 				state.Prompt = ""
 				newKeysView(&state)
 			case tcell.KeyRune:
@@ -250,8 +268,17 @@ func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interf
 }
 
 func drawStats(s Ui) {
-	nKeys := len(s.Keys)
-	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%d", nKeys))
+	nKeysStr := fmt.Sprint(len(s.Keys))
+	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), nKeysStr)
+	mountsStr := ""
+	for i, m := range s.Mounts {
+		if i == s.CurrentMount {
+			mountsStr = fmt.Sprintf("%s [%s]", mountsStr, m)
+		} else {
+			mountsStr = fmt.Sprintf("%s  %s ", mountsStr, m)
+		}
+	}
+	drawLine(s.Screen, 4, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), mountsStr)
 }
 
 func drawPrompt(s Ui) {
@@ -298,7 +325,7 @@ func newKeysView(s *Ui) {
 
 func setSecret(s *Ui) {
 	if len(s.FilteredKeys) > 0 {
-		s.Secret = s.Vault.GetSecret(s.FilteredKeys[s.ViewStart+s.Cursor])
+		s.Secret = s.Vault.GetSecret(s.Mounts[s.CurrentMount], s.FilteredKeys[s.ViewStart+s.Cursor])
 	} else {
 		s.Secret = vault.Secret{}
 	}

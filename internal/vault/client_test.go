@@ -36,9 +36,8 @@ func TestGetKeys(t *testing.T) {
 	vaultClient := Client{
 		Addr:  vaultAddr,
 		Token: token,
-		Mount: "secret",
 	}
-	keys := GetKeys(vaultClient)
+	keys := GetKeys(vaultClient, "secret")
 	if len(keys) != len(secrets) {
 		t.Fatalf("Expected %d keys, got %d", len(secrets), len(keys))
 	}
@@ -69,9 +68,8 @@ func TestGetSecret(t *testing.T) {
 	vaultClient := Client{
 		Addr:  vaultAddr,
 		Token: token,
-		Mount: "secret",
 	}
-	secret := vaultClient.GetSecret("/bar/baz")
+	secret := vaultClient.GetSecret("secret", "/bar/baz")
 	if err != nil {
 		t.Fatalf("Got unexpected error: %s", err)
 	}

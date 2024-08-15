@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -13,7 +14,6 @@ import (
 type Client struct {
 	Addr  string
 	Token string
-	Mount string
 }
 
 type dirEnt struct {
@@ -21,29 +21,35 @@ type dirEnt struct {
 	Name  string
 }
 
-func GetKeys(client Client) []string {
+var cachedKeys = make(map[string][]string)
+
+func GetKeys(client Client, mount string) []string {
+	if keys, found := cachedKeys[mount]; found {
+		return keys
+	}
 	entrypoint := dirEnt{
 		IsDir: true,
 		Name:  "/",
 	}
 	recv := make(chan string)
 	go func() {
-		recurse(recv, client, entrypoint)
+		recurse(recv, client, mount, entrypoint)
 		close(recv)
 	}()
 	keys := []string{}
 	for key := range recv {
 		keys = append(keys, key)
 	}
+	cachedKeys[mount] = keys
 	return keys
 }
 
-func recurse(recv chan string, client Client, entry dirEnt) {
+func recurse(recv chan string, client Client, mount string, entry dirEnt) {
 	if !entry.IsDir {
 		recv <- entry.Name
 		return
 	}
-	relativeEntries, err := client.listDir(entry.Name)
+	relativeEntries, err := client.listDir(mount, entry.Name)
 	if err != nil {
 		slog.Error("Failed to list directory", "directory", entry.Name, "err", err.Error())
 		return
@@ -60,14 +66,14 @@ func recurse(recv chan string, client Client, entry dirEnt) {
 		wg.Add(1)
 		go func(entry dirEnt) {
 			defer wg.Done()
-			recurse(recv, client, e)
+			recurse(recv, client, mount, e)
 		}(e)
 	}
 	wg.Wait()
 }
 
-func (c Client) listDir(name string) ([]dirEnt, error) {
-	url := fmt.Sprintf("%s/v1/%s/metadata%s?list=true", c.Addr, c.Mount, name)
+func (c Client) listDir(mount string, name string) ([]dirEnt, error) {
+	url := fmt.Sprintf("%s/v1/%s/metadata%s?list=true", c.Addr, mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []dirEnt{}, fmt.Errorf("Failed to create request: %s", err)
@@ -117,11 +123,11 @@ type Secret struct {
 
 var cachedSecrets = make(map[string]Secret)
 
-func (c Client) GetSecret(name string) Secret {
+func (c Client) GetSecret(mount, name string) Secret {
 	if secret, found := cachedSecrets[name]; found {
 		return secret
 	}
-	url := fmt.Sprintf("%s/v1/%s/data%s", c.Addr, c.Mount, name)
+	url := fmt.Sprintf("%s/v1/%s/data%s", c.Addr, mount, name)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		panic(fmt.Errorf("Failed to create request: %s", err))
@@ -150,4 +156,42 @@ func (c Client) GetSecret(name string) Secret {
 	}
 	cachedSecrets[name] = secret
 	return secret
+}
+
+type MountResponse struct {
+	Data struct {
+		Secret map[string]Mount
+	}
+}
+
+type Mount struct {
+	Type string
+}
+
+func (c Client) GetMounts() []string {
+	url := fmt.Sprintf("%s/v1/sys/internal/ui/mounts", c.Addr)
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(fmt.Errorf("Failed to create request: %s", err))
+	}
+	request.Header.Set("X-Vault-Token", c.Token)
+	request.Header.Set("Accept", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		panic(fmt.Errorf("Failed to perform request: %s", err))
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	var mounts MountResponse
+	if err := json.Unmarshal(body, &mounts); err != nil {
+		panic(fmt.Errorf("failed to unmarshal response body %s: %s", string(body), err))
+	}
+	mountNames := []string{}
+	for k, v := range mounts.Data.Secret {
+		if v.Type == "kv" {
+			mountNames = append(mountNames, strings.TrimSuffix(k, "/"))
+		}
+	}
+	slices.Sort(mountNames)
+	return mountNames
 }
