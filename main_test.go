@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/slarwise/pole3/internal/vault"
 )
 
 const (
@@ -33,16 +35,16 @@ func TestGetKeys(t *testing.T) {
 	if err := populate(vaultAddr, token, secrets); err != nil {
 		t.Fatalf("Failed to populate vault with secrets: %s", err.Error())
 	}
-	vault := VaultClient{
+	vaultClient := vault.Client{
 		Addr:  vaultAddr,
 		Token: token,
 		Mount: "secret",
 	}
-	entrypoint := DirEnt{
+	entrypoint := vault.DirEnt{
 		IsDir: true,
 		Name:  "/",
 	}
-	keys := getKeys(vault, entrypoint)
+	keys := getKeys(vaultClient, entrypoint)
 	if len(keys) != len(secrets) {
 		t.Fatalf("Expected %d keys, got %d", len(secrets), len(keys))
 	}
@@ -70,12 +72,12 @@ func TestGetSecret(t *testing.T) {
 	if err := populate(vaultAddr, token, secrets); err != nil {
 		t.Fatalf("Failed to populate vault with secrets: %s", err.Error())
 	}
-	vault := VaultClient{
+	vaultClient := vault.Client{
 		Addr:  vaultAddr,
 		Token: token,
 		Mount: "secret",
 	}
-	secret, err := vault.getSecret("/bar/baz")
+	secret := vaultClient.GetSecret("/bar/baz")
 	if err != nil {
 		t.Fatalf("Got unexpected error: %s", err)
 	}
