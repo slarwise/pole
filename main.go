@@ -88,9 +88,7 @@ func main() {
 		}
 	}
 	defer quit()
-	width, height := screen.Size()
-	state.Width = width
-	state.Height = height
+	state.Width, state.Height = screen.Size()
 	drawPrompt(state)
 	drawLoadingScreen(state)
 	screen.Show()
@@ -108,6 +106,7 @@ func main() {
 				state.ViewStart = 0
 			}
 		case *tcell.EventKey:
+			// TODO: Add ability to switch between key-value vault mounts
 			switch ev.Key() {
 			case tcell.KeyEscape, tcell.KeyCtrlC:
 				return
