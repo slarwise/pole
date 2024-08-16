@@ -84,7 +84,7 @@ func main() {
 	}
 	screen.EnablePaste()
 	screen.Clear()
-	state := Ui{
+	ui := Ui{
 		Screen:       screen,
 		Vault:        vaultClient,
 		Mounts:       mounts,
@@ -99,79 +99,79 @@ func main() {
 		screen.Fini()
 		if errorMsg != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", errorMsg)
-		} else if len(state.Result) != 0 {
-			fmt.Printf("%s\n", state.Result)
+		} else if len(ui.Result) != 0 {
+			fmt.Printf("%s\n", ui.Result)
 		}
 	}
 	defer quit()
-	state.Width, state.Height = screen.Size()
-	drawPrompt(state)
-	drawLoadingScreen(state)
+	ui.Width, ui.Height = screen.Size()
+	ui.drawPrompt()
+	drawLoadingScreen(ui)
 	screen.Show()
-	state.Keys = vaultClient.GetKeys(state.Mounts[state.CurrentMount])
-	newKeysView(&state)
+	ui.Keys = vaultClient.GetKeys(ui.Mounts[ui.CurrentMount])
+	ui.newKeysView()
 	for {
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
 			screen.Sync()
-			state.Width, state.Height = screen.Size()
-			state.ViewEnd = min(nKeysToShow(state.Height), len(state.FilteredKeys))
-			if state.ViewStart+state.Cursor >= state.ViewEnd {
-				state.Cursor = 0
-				state.ViewStart = 0
+			ui.Width, ui.Height = screen.Size()
+			ui.ViewEnd = min(nKeysToShow(ui.Height), len(ui.FilteredKeys))
+			if ui.ViewStart+ui.Cursor >= ui.ViewEnd {
+				ui.Cursor = 0
+				ui.ViewStart = 0
 			}
 		case *tcell.EventKey:
 			switch ev.Key() {
 			case tcell.KeyEscape, tcell.KeyCtrlC:
 				return
 			case tcell.KeyEnter:
-				if !(reflect.ValueOf(state.Secret).IsZero()) {
-					bytes, err := json.MarshalIndent(state.Secret, "", "  ")
+				if !(reflect.ValueOf(ui.Secret).IsZero()) {
+					bytes, err := json.MarshalIndent(ui.Secret, "", "  ")
 					if err != nil {
 						panic(fmt.Sprintf("Failed to marshal secret: %s", err))
 					}
-					state.Result = bytes
+					ui.Result = bytes
 				}
 				return
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
-				if len(state.Prompt) > 0 {
-					state.Prompt = state.Prompt[:len(state.Prompt)-1]
-					newKeysView(&state)
+				if len(ui.Prompt) > 0 {
+					ui.Prompt = ui.Prompt[:len(ui.Prompt)-1]
+					ui.newKeysView()
 				}
 			case tcell.KeyCtrlU:
-				state.Prompt = ""
-				newKeysView(&state)
+				ui.Prompt = ""
+				ui.newKeysView()
 			case tcell.KeyRune:
 				switch ev.Rune() {
 				case '?':
-					state.ShowHelp = !state.ShowHelp
+					ui.ShowHelp = !ui.ShowHelp
 				case ',':
-					nextMount(&state)
+					ui.nextMount()
 				case ';':
-					previousMount(&state)
+					ui.previousMount()
 				default:
-					state.Prompt += string(ev.Rune())
-					newKeysView(&state)
+					ui.Prompt += string(ev.Rune())
+					ui.newKeysView()
 				}
 			case tcell.KeyRight:
-				nextMount(&state)
+				ui.nextMount()
 			case tcell.KeyLeft:
-				previousMount(&state)
+				ui.previousMount()
 			case tcell.KeyCtrlK, tcell.KeyCtrlP, tcell.KeyUp:
-				moveUp(&state)
+				ui.moveUp()
 			case tcell.KeyCtrlJ, tcell.KeyCtrlN, tcell.KeyDown:
-				moveDown(&state)
+				ui.moveDown()
 			}
 		}
 
 		screen.Clear()
-		drawKeys(state)
-		drawScrollbar(state)
-		drawStats(state)
-		drawHelp(state)
-		drawPrompt(state)
-		drawSecret(state)
+		ui.drawKeys()
+		ui.drawScrollbar()
+		ui.drawStats()
+		ui.drawHelp()
+		ui.drawPrompt()
+		ui.drawSecret()
 		screen.Show()
 	}
 }
@@ -183,51 +183,51 @@ func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	}
 }
 
-func drawKeys(s Ui) {
-	yBottom := nKeysToShow(s.Height) - 1
-	maxLength := s.Width/2 - 2
-	for i, key := range s.FilteredKeys[s.ViewStart:s.ViewEnd] {
+func (u Ui) drawKeys() {
+	yBottom := nKeysToShow(u.Height) - 1
+	maxLength := u.Width/2 - 2
+	for i, key := range u.FilteredKeys[u.ViewStart:u.ViewEnd] {
 		keyToDraw := key
 		if len(keyToDraw) > maxLength {
 			keyToDraw = fmt.Sprintf("%s..", key[:maxLength-2])
 		}
 		y := yBottom - i
-		if i == s.Cursor {
-			drawLine(s.Screen, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
-			drawLine(s.Screen, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
-			drawLine(s.Screen, 2, y, tcell.StyleDefault.Background(tcell.ColorBlack), keyToDraw)
+		if i == u.Cursor {
+			drawLine(u.Screen, 0, y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
+			drawLine(u.Screen, 1, y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
+			drawLine(u.Screen, 2, y, tcell.StyleDefault.Background(tcell.ColorBlack), keyToDraw)
 		} else {
-			drawLine(s.Screen, 2, y, tcell.StyleDefault, keyToDraw)
+			drawLine(u.Screen, 2, y, tcell.StyleDefault, keyToDraw)
 		}
 	}
 }
 
-func drawScrollbar(s Ui) {
-	if len(s.FilteredKeys) <= nKeysToShow(s.Height) {
+func (u Ui) drawScrollbar() {
+	if len(u.FilteredKeys) <= nKeysToShow(u.Height) {
 		return
 	}
-	fullHeight := float32(nKeysToShow(s.Height) - 1)
-	nKeys := float32(len(s.FilteredKeys))
-	normieStartY := float32(s.ViewStart) / nKeys
+	fullHeight := float32(nKeysToShow(u.Height) - 1)
+	nKeys := float32(len(u.FilteredKeys))
+	normieStartY := float32(u.ViewStart) / nKeys
 	normieH := fullHeight / nKeys
 	normieEndY := normieStartY + normieH
 	startY := int(normieStartY * fullHeight)
 	endY := int(normieEndY*fullHeight) + 1
-	x := s.Width / 2
+	x := u.Width / 2
 	for y := startY; y <= endY; y++ {
 		invertedY := int(fullHeight) - y
-		s.Screen.SetContent(x, invertedY, '│', nil, tcell.StyleDefault.Foreground(tcell.ColorGray))
+		u.Screen.SetContent(x, invertedY, '│', nil, tcell.StyleDefault.Foreground(tcell.ColorGray))
 	}
 }
 
-func drawSecret(s Ui) {
-	if reflect.ValueOf(s.Secret).IsZero() {
+func (u Ui) drawSecret() {
+	if reflect.ValueOf(u.Secret).IsZero() {
 		return
 	}
-	x := s.Width/2 + 2
+	x := u.Width/2 + 2
 	y := 0
-	drawData(s.Screen, x, &y, "data", s.Secret.Data.Data)
-	drawData(s.Screen, x, &y, "metadata", s.Secret.Data.Metadata)
+	drawData(u.Screen, x, &y, "data", u.Secret.Data.Data)
+	drawData(u.Screen, x, &y, "metadata", u.Secret.Data.Metadata)
 }
 
 func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}) {
@@ -269,35 +269,35 @@ func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interf
 	}
 }
 
-func drawStats(s Ui) {
-	nKeysStr := fmt.Sprint(len(s.Keys))
-	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), nKeysStr)
+func (u Ui) drawStats() {
+	nKeysStr := fmt.Sprint(len(u.Keys))
+	drawLine(u.Screen, 2, u.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), nKeysStr)
 	mountsStr := ""
-	for i, m := range s.Mounts {
-		if i == s.CurrentMount {
+	for i, m := range u.Mounts {
+		if i == u.CurrentMount {
 			mountsStr = fmt.Sprintf("%s [%s]", mountsStr, m)
 		} else {
 			mountsStr = fmt.Sprintf("%s  %s ", mountsStr, m)
 		}
 	}
-	drawLine(s.Screen, 4, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), mountsStr)
+	drawLine(u.Screen, 4, u.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), mountsStr)
 }
 
-func drawHelp(s Ui) {
-	if !s.ShowHelp {
+func (u Ui) drawHelp() {
+	if !u.ShowHelp {
 		return
 	}
 	helpStr := "Move ↑↓ Change mount ←→ Exit <Esc>"
-	drawLine(s.Screen, s.Width/2-len(helpStr)/2+4, s.Height-1, tcell.StyleDefault.Foreground(tcell.ColorRed), helpStr)
+	drawLine(u.Screen, u.Width/2-len(helpStr)/2+4, u.Height-1, tcell.StyleDefault.Foreground(tcell.ColorRed), helpStr)
 }
 
-func drawPrompt(s Ui) {
-	drawLine(s.Screen, 0, s.Height-1, tcell.StyleDefault.Bold(true), ">")
-	drawLine(s.Screen, 2, s.Height-1, tcell.StyleDefault, s.Prompt)
+func (u Ui) drawPrompt() {
+	drawLine(u.Screen, 0, u.Height-1, tcell.StyleDefault.Bold(true), ">")
+	drawLine(u.Screen, 2, u.Height-1, tcell.StyleDefault, u.Prompt)
 }
 
-func drawLoadingScreen(s Ui) {
-	drawLine(s.Screen, 2, s.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%-*s", s.Width-2, "Loading..."))
+func drawLoadingScreen(u Ui) {
+	drawLine(u.Screen, 2, u.Height-2, tcell.StyleDefault.Foreground(tcell.ColorYellow), fmt.Sprintf("%-*s", u.Width-2, "Loading..."))
 }
 
 func nKeysToShow(windowHeight int) int {
@@ -309,82 +309,82 @@ type Match struct {
 	ConsecutiveMatches int
 }
 
-func newKeysView(s *Ui) {
+func (u *Ui) newKeysView() {
 	matches := []Match{}
-	for _, k := range s.Keys {
-		if match, consecutive := matchesPrompt(s.Prompt, k); match {
+	for _, k := range u.Keys {
+		if match, consecutive := matchesPrompt(u.Prompt, k); match {
 			matches = append(matches, Match{Key: k, ConsecutiveMatches: consecutive})
 		}
 	}
 	slices.SortFunc(matches, func(a, b Match) int {
 		return b.ConsecutiveMatches - a.ConsecutiveMatches
 	})
-	s.FilteredKeys = []string{}
+	u.FilteredKeys = []string{}
 	for _, m := range matches {
-		s.FilteredKeys = append(s.FilteredKeys, m.Key)
+		u.FilteredKeys = append(u.FilteredKeys, m.Key)
 	}
-	s.ViewStart = 0
-	s.ViewEnd = min(nKeysToShow(s.Height), len(s.FilteredKeys))
-	if len(s.FilteredKeys) == 0 {
-		s.Cursor = 0
+	u.ViewStart = 0
+	u.ViewEnd = min(nKeysToShow(u.Height), len(u.FilteredKeys))
+	if len(u.FilteredKeys) == 0 {
+		u.Cursor = 0
 	} else {
-		s.Cursor = min(s.Cursor, len(s.FilteredKeys)-1)
+		u.Cursor = min(u.Cursor, len(u.FilteredKeys)-1)
 	}
-	setSecret(s)
+	u.setSecret()
 }
 
-func setSecret(s *Ui) {
-	if len(s.FilteredKeys) > 0 {
-		s.Secret = s.Vault.GetSecret(s.Mounts[s.CurrentMount], s.FilteredKeys[s.ViewStart+s.Cursor])
+func (u *Ui) setSecret() {
+	if len(u.FilteredKeys) > 0 {
+		u.Secret = u.Vault.GetSecret(u.Mounts[u.CurrentMount], u.FilteredKeys[u.ViewStart+u.Cursor])
 	} else {
-		s.Secret = vault.Secret{}
+		u.Secret = vault.Secret{}
 	}
 }
 
-func moveUp(s *Ui) {
-	if s.ViewStart+s.Cursor+1 < len(s.FilteredKeys) {
-		if s.Cursor+1 >= nKeysToShow(s.Height)-SCROLL_OFF && s.ViewEnd < len(s.FilteredKeys) {
-			s.ViewStart++
-			s.ViewEnd++
+func (u *Ui) moveUp() {
+	if u.ViewStart+u.Cursor+1 < len(u.FilteredKeys) {
+		if u.Cursor+1 >= nKeysToShow(u.Height)-SCROLL_OFF && u.ViewEnd < len(u.FilteredKeys) {
+			u.ViewStart++
+			u.ViewEnd++
 		} else {
-			s.Cursor++
+			u.Cursor++
 		}
 	}
-	setSecret(s)
+	u.setSecret()
 }
 
-func moveDown(s *Ui) {
-	if s.Cursor > 0 {
-		if s.Cursor-1 < SCROLL_OFF && s.ViewStart > 0 {
-			s.ViewStart--
-			s.ViewEnd--
+func (u *Ui) moveDown() {
+	if u.Cursor > 0 {
+		if u.Cursor-1 < SCROLL_OFF && u.ViewStart > 0 {
+			u.ViewStart--
+			u.ViewEnd--
 		} else {
-			s.Cursor--
+			u.Cursor--
 		}
 	}
-	setSecret(s)
+	u.setSecret()
 }
 
-func nextMount(s *Ui) {
-	if s.CurrentMount == 0 {
-		s.CurrentMount = len(s.Mounts) - 1
+func (u *Ui) nextMount() {
+	if u.CurrentMount == 0 {
+		u.CurrentMount = len(u.Mounts) - 1
 	} else {
-		s.CurrentMount--
+		u.CurrentMount--
 	}
-	drawLoadingScreen(*s)
-	s.Screen.Show()
-	s.Keys = s.Vault.GetKeys(s.Mounts[s.CurrentMount])
-	s.Prompt = ""
-	newKeysView(s)
+	drawLoadingScreen(*u)
+	u.Screen.Show()
+	u.Keys = u.Vault.GetKeys(u.Mounts[u.CurrentMount])
+	u.Prompt = ""
+	u.newKeysView()
 }
 
-func previousMount(s *Ui) {
-	s.CurrentMount = (s.CurrentMount + 1) % len(s.Mounts)
-	drawLoadingScreen(*s)
-	s.Screen.Show()
-	s.Keys = s.Vault.GetKeys(s.Mounts[s.CurrentMount])
-	s.Prompt = ""
-	newKeysView(s)
+func (u *Ui) previousMount() {
+	u.CurrentMount = (u.CurrentMount + 1) % len(u.Mounts)
+	drawLoadingScreen(*u)
+	u.Screen.Show()
+	u.Keys = u.Vault.GetKeys(u.Mounts[u.CurrentMount])
+	u.Prompt = ""
+	u.newKeysView()
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
