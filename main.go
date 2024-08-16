@@ -366,6 +366,9 @@ func (u *Ui) moveDown() {
 }
 
 func (u *Ui) nextMount() {
+	if len(u.Mounts) < 2 {
+		return
+	}
 	if u.CurrentMount == 0 {
 		u.CurrentMount = len(u.Mounts) - 1
 	} else {
@@ -379,6 +382,9 @@ func (u *Ui) nextMount() {
 }
 
 func (u *Ui) previousMount() {
+	if len(u.Mounts) < 2 {
+		return
+	}
 	u.CurrentMount = (u.CurrentMount + 1) % len(u.Mounts)
 	drawLoadingScreen(*u)
 	u.Screen.Show()
