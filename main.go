@@ -47,6 +47,28 @@ type Ui struct {
 	ShowHelp     bool
 }
 
+func newUi(vaultClient vault.Client, mounts []string) (Ui, error) {
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		return Ui{}, fmt.Errorf("Failed to create a terminal screen: %s", err)
+	}
+	if err := screen.Init(); err != nil {
+		return Ui{}, fmt.Errorf("Failed to initialize terminal screen: %s", err)
+	}
+	screen.EnablePaste()
+	screen.Clear()
+	width, height := screen.Size()
+	return Ui{
+		Vault:        vaultClient,
+		Mounts:       mounts,
+		CurrentMount: 0,
+		ShowHelp:     true,
+		Screen:       screen,
+		Width:        width,
+		Height:       height,
+	}, nil
+}
+
 const (
 	SCROLL_OFF = 4
 )
@@ -75,28 +97,16 @@ func main() {
 	} else {
 		log.SetOutput(io.Discard)
 	}
-	screen, err := tcell.NewScreen()
+	ui, err := newUi(vaultClient, mounts)
 	if err != nil {
-		fatal("Failed to create a terminal screen", "err", err)
-	}
-	if err := screen.Init(); err != nil {
-		fatal("Failed to initialize terminal screen", "err", err)
-	}
-	screen.EnablePaste()
-	screen.Clear()
-	ui := Ui{
-		Screen:       screen,
-		Vault:        vaultClient,
-		Mounts:       mounts,
-		CurrentMount: 0,
-		ShowHelp:     true,
+		fatal("Failed to initialize UI", "err", err)
 	}
 	quit := func() {
 		// You have to catch panics in a defer, clean up, and
 		// re-raise them - otherwise your application can
 		// die without leaving any diagnostic trace.
 		errorMsg := recover()
-		screen.Fini()
+		ui.Screen.Fini()
 		if errorMsg != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", errorMsg)
 		} else if len(ui.Result) != 0 {
@@ -104,18 +114,19 @@ func main() {
 		}
 	}
 	defer quit()
-	ui.Width, ui.Height = screen.Size()
 	ui.drawPrompt()
 	drawLoadingScreen(ui)
-	screen.Show()
+	ui.Screen.Show()
 	ui.Keys = vaultClient.GetKeys(ui.Mounts[ui.CurrentMount])
 	ui.newKeysView()
+	ui.Redraw()
 	for {
-		ev := screen.PollEvent()
+		ev := ui.Screen.PollEvent()
+		slog.Info("event", "ev", fmt.Sprintf("%T", ev))
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
-			screen.Sync()
-			ui.Width, ui.Height = screen.Size()
+			ui.Screen.Sync()
+			ui.Width, ui.Height = ui.Screen.Size()
 			ui.ViewEnd = min(nKeysToShow(ui.Height), len(ui.FilteredKeys))
 			if ui.ViewStart+ui.Cursor >= ui.ViewEnd {
 				ui.Cursor = 0
@@ -165,15 +176,19 @@ func main() {
 			}
 		}
 
-		screen.Clear()
-		ui.drawKeys()
-		ui.drawScrollbar()
-		ui.drawStats()
-		ui.drawHelp()
-		ui.drawPrompt()
-		ui.drawSecret()
-		screen.Show()
+		ui.Redraw()
 	}
+}
+
+func (u Ui) Redraw() {
+	u.Screen.Clear()
+	u.drawKeys()
+	u.drawScrollbar()
+	u.drawStats()
+	u.drawHelp()
+	u.drawPrompt()
+	u.drawSecret()
+	u.Screen.Show()
 }
 
 func drawLine(s tcell.Screen, x, y int, style tcell.Style, text string) {
