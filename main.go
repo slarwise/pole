@@ -108,7 +108,7 @@ func main() {
 	drawPrompt(state)
 	drawLoadingScreen(state)
 	screen.Show()
-	state.Keys = vault.GetKeys(vaultClient, state.Mounts[state.CurrentMount])
+	state.Keys = vaultClient.GetKeys(state.Mounts[state.CurrentMount])
 	newKeysView(&state)
 	for {
 		ev := screen.PollEvent()
@@ -373,7 +373,7 @@ func nextMount(s *Ui) {
 	}
 	drawLoadingScreen(*s)
 	s.Screen.Show()
-	s.Keys = vault.GetKeys(s.Vault, s.Mounts[s.CurrentMount])
+	s.Keys = s.Vault.GetKeys(s.Mounts[s.CurrentMount])
 	s.Prompt = ""
 	newKeysView(s)
 }
@@ -382,7 +382,7 @@ func previousMount(s *Ui) {
 	s.CurrentMount = (s.CurrentMount + 1) % len(s.Mounts)
 	drawLoadingScreen(*s)
 	s.Screen.Show()
-	s.Keys = vault.GetKeys(s.Vault, s.Mounts[s.CurrentMount])
+	s.Keys = s.Vault.GetKeys(s.Mounts[s.CurrentMount])
 	s.Prompt = ""
 	newKeysView(s)
 }

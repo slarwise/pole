@@ -37,7 +37,7 @@ func TestGetKeys(t *testing.T) {
 		Addr:  vaultAddr,
 		Token: token,
 	}
-	keys := GetKeys(vaultClient, "secret")
+	keys := vaultClient.GetKeys("secret")
 	if len(keys) != len(secrets) {
 		t.Fatalf("Expected %d keys, got %d", len(secrets), len(keys))
 	}

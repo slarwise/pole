@@ -23,7 +23,7 @@ type dirEnt struct {
 
 var cachedKeys = make(map[string][]string)
 
-func GetKeys(client Client, mount string) []string {
+func (c Client) GetKeys(mount string) []string {
 	if keys, found := cachedKeys[mount]; found {
 		return keys
 	}
@@ -33,7 +33,7 @@ func GetKeys(client Client, mount string) []string {
 	}
 	recv := make(chan string)
 	go func() {
-		recurse(recv, client, mount, entrypoint)
+		c.recurse(recv, mount, entrypoint)
 		close(recv)
 	}()
 	keys := []string{}
@@ -44,12 +44,12 @@ func GetKeys(client Client, mount string) []string {
 	return keys
 }
 
-func recurse(recv chan string, client Client, mount string, entry dirEnt) {
+func (c Client) recurse(recv chan string, mount string, entry dirEnt) {
 	if !entry.IsDir {
 		recv <- entry.Name
 		return
 	}
-	relativeEntries, err := client.listDir(mount, entry.Name)
+	relativeEntries, err := c.listDir(mount, entry.Name)
 	if err != nil {
 		slog.Error("Failed to list directory", "directory", entry.Name, "err", err.Error())
 		return
@@ -66,7 +66,7 @@ func recurse(recv chan string, client Client, mount string, entry dirEnt) {
 		wg.Add(1)
 		go func(entry dirEnt) {
 			defer wg.Done()
-			recurse(recv, client, mount, e)
+			c.recurse(recv, mount, e)
 		}(e)
 	}
 	wg.Wait()
