@@ -165,9 +165,9 @@ func main() {
 					ui.Prompt += string(ev.Rune())
 					ui.newKeysView()
 				}
-			case tcell.KeyRight:
-				ui.nextMount()
 			case tcell.KeyLeft:
+				ui.nextMount()
+			case tcell.KeyRight:
 				ui.previousMount()
 			case tcell.KeyCtrlK, tcell.KeyCtrlP, tcell.KeyUp:
 				ui.moveUp()
