@@ -1,19 +1,29 @@
 # Pole (vault)
 
-```
-mountA
-  dirA
-    secret1
-  secret2
+Browse secrets in vault in the terminal. To do it, do:
+
+```sh
+git clone <this>
+go install .
+export VAULT_ADDR=https://my-vault.com
+export VAULT_TOKEN=secret-token
+pole3
 ```
 
-Read all secrets under mountA concurrently.
+Navigate secrets and mounts with the arrow keys.
 
-```
-LIST mountA
-  LIST dirA
-    GET dirA/secret1
-  GET secret2
+## Development
+
+To start and populate a local vault server, run
+
+```sh
+go run dev-vault/main.go
 ```
 
-Wait until this is done to visualize the data.
+Set the environment with
+
+```sh
+dev-vault/env.sh
+```
+
+and run `go run main.go` to test it.
