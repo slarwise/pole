@@ -173,6 +173,7 @@ func main() {
 				ui.moveUp()
 			case tcell.KeyCtrlJ, tcell.KeyCtrlN, tcell.KeyDown:
 				ui.moveDown()
+				// TODO: Add key for refreshing the secrets
 			}
 		}
 
