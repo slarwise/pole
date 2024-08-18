@@ -1,3 +1,0 @@
-#!/bin/sh
-
-vault server -dev -dev-root-token-id dev-only-token -address http://127.0.0.1:8200
