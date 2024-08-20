@@ -1,4 +1,4 @@
-module github.com/slarwise/pole3
+module github.com/slarwise/pole
 
 go 1.22.5
 

@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/slarwise/pole3/internal/vault"
+	"github.com/slarwise/pole/internal/vault"
 
 	"github.com/gdamore/tcell/v2"
 )
