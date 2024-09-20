@@ -81,6 +81,10 @@ func TestGetSecret(t *testing.T) {
 	if secret.Url != expectedUrl {
 		t.Fatalf("Expected url to be %s, got %s", expectedUrl, secret.Url)
 	}
+	expectedCli := "vault kv get -mount=secret /bar/baz"
+	if secret.Cli != expectedCli {
+		t.Fatalf("Expected cli command to be %s, got %s", expectedCli, secret.Cli)
+	}
 }
 
 func startVault(token, addr string) (*exec.Cmd, error) {
