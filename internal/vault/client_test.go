@@ -77,6 +77,10 @@ func TestGetSecret(t *testing.T) {
 	if !found || data != "d" {
 		t.Fatalf("Expected secret to have data `c=d`, got %v", secret.Data.Data)
 	}
+	expectedUrl := "http://127.0.0.1:8200/ui/vault/secrets/secret/show/bar/baz"
+	if secret.Url != expectedUrl {
+		t.Fatalf("Expected url to be %s, got %s", expectedUrl, secret.Url)
+	}
 }
 
 func startVault(token, addr string) (*exec.Cmd, error) {

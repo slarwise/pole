@@ -115,6 +115,7 @@ func (c Client) listDir(mount string, name string) ([]dirEnt, error) {
 }
 
 type Secret struct {
+	Url  string `json:"url"`
 	Data struct {
 		Data     map[string]interface{} `json:"data"`
 		Metadata map[string]interface{} `json:"metadata"`
@@ -154,6 +155,7 @@ func (c Client) GetSecret(mount, name string) Secret {
 	if response.StatusCode != 200 && isErrorForRealForReal {
 		panic(fmt.Errorf("Got %s on url %s", response.Status, url))
 	}
+	secret.Url = fmt.Sprintf("%s/ui/vault/secrets/%s/show%s", c.Addr, mount, name)
 	cachedSecrets[name] = secret
 	return secret
 }

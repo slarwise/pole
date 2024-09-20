@@ -7,6 +7,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"os/exec"
 	"reflect"
 	"slices"
 	"strings"
@@ -145,6 +146,8 @@ func main() {
 					ui.Result = bytes
 				}
 				return
+			case tcell.KeyCtrlO:
+				ui.openInBrowser()
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
 				if len(ui.Prompt) > 0 {
 					ui.Prompt = ui.Prompt[:len(ui.Prompt)-1]
@@ -409,6 +412,14 @@ func (u *Ui) previousMount() {
 	u.newKeysView()
 }
 
+func (u *Ui) openInBrowser() {
+	url := u.Secret.Url
+	cmd := exec.Command("open", url)
+	if err := cmd.Run(); err != nil {
+		slog.Error("Failed to open secret in browser", "err", err, "url", url)
+	}
+}
+
 func matchesPrompt(prompt, s string) (bool, int) {
 	if len(prompt) == 0 {
 		return true, 0
@@ -436,4 +447,3 @@ func matchesPrompt(prompt, s string) (bool, int) {
 }
 
 // TODO: Handle panic when no secrets are found, usually due to incorrect vault token
-// TODO: Print the url to the secret on pressing enter
