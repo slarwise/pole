@@ -90,8 +90,10 @@ func main() {
 		Addr:  mustGetEnv("VAULT_ADDR"),
 		Token: mustGetEnv("VAULT_TOKEN"),
 	}
-	mounts := []string{}
-	mounts = vaultClient.GetMounts()
+	mounts, err := vaultClient.GetMounts()
+	if err != nil {
+		fatal("Failed to get mounts", "err", err)
+	}
 	if len(os.Getenv("DEBUG")) > 0 {
 		logFile, err := os.Create("./log")
 		if err != nil {
