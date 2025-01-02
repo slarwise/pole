@@ -326,7 +326,7 @@ func (u Ui) drawHelp() {
 	if !u.ShowHelp {
 		return
 	}
-	helpStr := "Move ↑↓ Change mount ←→ Exit <Esc>"
+	helpStr := "Move ↑↓ Change mount ←→ Change field C-[N/P] Copy C-Y Exit <Esc>"
 	drawLine(u.Screen, u.Width/2-len(helpStr)/2+4, u.Height-1, tcell.StyleDefault.Foreground(tcell.ColorRed), helpStr)
 }
 
