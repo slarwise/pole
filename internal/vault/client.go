@@ -172,23 +172,26 @@ type Mount struct {
 	Type string
 }
 
-func (c Client) GetMounts() []string {
+func (c Client) GetMounts() ([]string, error) {
 	url := fmt.Sprintf("%s/v1/sys/internal/ui/mounts", c.Addr)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		panic(fmt.Errorf("Failed to create request: %s", err))
+		return nil, fmt.Errorf("Failed to create request: %s", err)
 	}
 	request.Header.Set("X-Vault-Token", c.Token)
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		panic(fmt.Errorf("Failed to perform request: %s", err))
+		return nil, fmt.Errorf("Failed to perform request: %s", err)
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("Got %v on %v: %s", response.Status, url, body)
+	}
 	var mounts MountResponse
 	if err := json.Unmarshal(body, &mounts); err != nil {
-		panic(fmt.Errorf("failed to unmarshal response body %s: %s", string(body), err))
+		return nil, fmt.Errorf("failed to unmarshal response body %s: %s", string(body), err)
 	}
 	mountNames := []string{}
 	for k, v := range mounts.Data.Secret {
@@ -197,5 +200,5 @@ func (c Client) GetMounts() []string {
 		}
 	}
 	slices.Sort(mountNames)
-	return mountNames
+	return mountNames, nil
 }

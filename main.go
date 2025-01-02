@@ -90,8 +90,10 @@ func main() {
 		Addr:  mustGetEnv("VAULT_ADDR"),
 		Token: mustGetEnv("VAULT_TOKEN"),
 	}
-	mounts := []string{}
-	mounts = vaultClient.GetMounts()
+	mounts, err := vaultClient.GetMounts()
+	if err != nil {
+		fatal("Failed to get mounts", "err", err)
+	}
 	if len(os.Getenv("DEBUG")) > 0 {
 		logFile, err := os.Create("./log")
 		if err != nil {
@@ -109,11 +111,12 @@ func main() {
 		// You have to catch panics in a defer, clean up, and
 		// re-raise them - otherwise your application can
 		// die without leaving any diagnostic trace.
-		errorMsg := recover()
+		maybePanic := recover()
 		ui.Screen.Fini()
-		if errorMsg != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", errorMsg)
-		} else if len(ui.Result) != 0 {
+		if maybePanic != nil {
+			panic(maybePanic)
+		}
+		if len(ui.Result) != 0 {
 			fmt.Printf("%s\n", ui.Result)
 		}
 	}
