@@ -170,6 +170,8 @@ func main() {
 					ui.nextMount()
 				case ';':
 					ui.previousMount()
+				case ' ':
+					ui.copyCurrentField()
 				default:
 					ui.Prompt += string(ev.Rune())
 					ui.newKeysView()
@@ -186,8 +188,6 @@ func main() {
 				ui.moveSelectedFieldDown()
 			case tcell.KeyCtrlP:
 				ui.moveSelectedFieldUp()
-			case tcell.KeyCtrlY:
-				ui.copyCurrentField()
 			case tcell.KeyCtrlI:
 				ui.toggleShowSecret()
 				// TODO: Add key for refreshing the secrets
@@ -329,7 +329,7 @@ func (u Ui) drawHelp() {
 	if !u.ShowHelp {
 		return
 	}
-	helpStr := "Move ↑↓ Change mount ←→ Change field C-[N/P] Copy C-Y Exit <Esc>"
+	helpStr := "Move ↑↓ Change mount ←→ Change field C-[N/P] Copy <Space> Exit <Esc>"
 	drawLine(u.Screen, u.Width/2-len(helpStr)/2+4, u.Height-1, tcell.StyleDefault.Foreground(tcell.ColorRed), helpStr)
 }
 
