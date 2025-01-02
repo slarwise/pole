@@ -31,21 +31,22 @@ func fatal(msg string, args ...any) {
 }
 
 type Ui struct {
-	Screen       tcell.Screen
-	Keys         []string
-	FilteredKeys []string
-	Secret       vault.Secret
-	Prompt       string
-	ViewStart    int
-	ViewEnd      int
-	Cursor       int
-	Width        int
-	Height       int
-	Result       []byte
-	Vault        vault.Client
-	Mounts       []string
-	CurrentMount int
-	ShowHelp     bool
+	Screen        tcell.Screen
+	Keys          []string
+	FilteredKeys  []string
+	Secret        vault.Secret
+	Prompt        string
+	ViewStart     int
+	ViewEnd       int
+	Cursor        int
+	Width         int
+	Height        int
+	Result        []byte
+	Vault         vault.Client
+	Mounts        []string
+	CurrentMount  int
+	ShowHelp      bool
+	SelectedField int
 }
 
 func newUi(vaultClient vault.Client, mounts []string) (Ui, error) {
@@ -75,10 +76,11 @@ const (
 )
 
 var (
-	STYLE_KEY     = tcell.StyleDefault.Foreground(tcell.ColorBlue)
-	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorGreen)
-	STYLE_NULL    = tcell.StyleDefault.Foreground(tcell.ColorGray)
-	STYLE_DEFAULT = tcell.StyleDefault
+	STYLE_KEY             = tcell.StyleDefault.Foreground(tcell.ColorBlue)
+	STYLE_KEY_HIGHLIGHTED = tcell.StyleDefault.Foreground(tcell.ColorRed)
+	STYLE_STRING          = tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	STYLE_NULL            = tcell.StyleDefault.Foreground(tcell.ColorGray)
+	STYLE_DEFAULT         = tcell.StyleDefault
 )
 
 func main() {
@@ -156,6 +158,10 @@ func main() {
 			case tcell.KeyCtrlU:
 				ui.Prompt = ""
 				ui.newKeysView()
+			case tcell.KeyCtrlN:
+				ui.moveSelectedFieldDown()
+			case tcell.KeyCtrlP:
+				ui.moveSelectedFieldUp()
 			case tcell.KeyCtrlY:
 				ui.copyCurrentField()
 			case tcell.KeyRune:
@@ -174,9 +180,9 @@ func main() {
 				ui.nextMount()
 			case tcell.KeyRight:
 				ui.previousMount()
-			case tcell.KeyCtrlK, tcell.KeyCtrlP, tcell.KeyUp:
+			case tcell.KeyCtrlK, tcell.KeyUp:
 				ui.moveUp()
-			case tcell.KeyCtrlJ, tcell.KeyCtrlN, tcell.KeyDown:
+			case tcell.KeyCtrlJ, tcell.KeyDown:
 				ui.moveDown()
 				// TODO: Add key for refreshing the secrets
 			}
@@ -247,11 +253,11 @@ func (u Ui) drawSecret() {
 	}
 	x := u.Width/2 + 2
 	y := 0
-	drawData(u.Screen, x, &y, "data", u.Secret.Data.Data)
-	drawData(u.Screen, x, &y, "metadata", u.Secret.Data.Metadata)
+	drawData(u.Screen, x, &y, "data", u.Secret.Data.Data, u.SelectedField)
+	drawData(u.Screen, x, &y, "metadata", u.Secret.Data.Metadata, -1)
 }
 
-func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}) {
+func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}, highlightedIndex int) {
 	keys := []string{}
 	for k := range data {
 		keys = append(keys, k)
@@ -260,9 +266,13 @@ func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interf
 	kToDraw := fmt.Sprintf(`%s: `, name)
 	drawLine(s, x, *y, STYLE_KEY, kToDraw)
 	*y++
-	for _, k := range keys {
+	for i, k := range keys {
 		kToDraw := fmt.Sprintf(`%s: `, k)
-		drawLine(s, x+2, *y, STYLE_KEY, kToDraw)
+		style := STYLE_KEY
+		if i == highlightedIndex {
+			style = STYLE_KEY_HIGHLIGHTED
+		}
+		drawLine(s, x+2, *y, style, kToDraw)
 		vStart := x + 2 + len(kToDraw)
 		v := data[k]
 		switch vForReal := v.(type) {
@@ -371,6 +381,7 @@ func (u *Ui) moveUp() {
 			u.Cursor++
 		}
 	}
+	u.SelectedField = 0
 	u.setSecret()
 }
 
@@ -383,6 +394,7 @@ func (u *Ui) moveDown() {
 			u.Cursor--
 		}
 	}
+	u.SelectedField = 0
 	u.setSecret()
 }
 
@@ -422,11 +434,22 @@ func (u *Ui) openInBrowser() {
 	}
 }
 
+func (u *Ui) moveSelectedFieldDown() {
+	u.SelectedField = min(max(0, len(u.Secret.Data.Data)-1), u.SelectedField+1)
+}
+
+func (u *Ui) moveSelectedFieldUp() {
+	u.SelectedField = max(0, u.SelectedField-1)
+}
+
 func (u Ui) copyCurrentField() {
-	// TODO: Copy the selected field, now the first field is copied
+	i := 0
 	for _, val := range u.Secret.Data.Data {
-		u.Screen.SetClipboard([]byte(fmt.Sprint(val)))
-		break
+		if i == u.SelectedField {
+			u.Screen.SetClipboard([]byte(fmt.Sprint(val)))
+			break
+		}
+		i++
 	}
 }
 
