@@ -455,14 +455,13 @@ func (u *Ui) toggleShowSecret() {
 }
 
 func (u Ui) copyCurrentField() {
-	i := 0
-	for _, val := range u.Secret.Data.Data {
-		if i == u.SelectedField {
-			u.Screen.SetClipboard([]byte(fmt.Sprint(val)))
-			break
-		}
-		i++
+	keys := []string{}
+	for k := range u.Secret.Data.Data {
+		keys = append(keys, k)
 	}
+	slices.Sort(keys)
+	val := u.Secret.Data.Data[keys[u.SelectedField]]
+	u.Screen.SetClipboard([]byte(fmt.Sprint(val)))
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
