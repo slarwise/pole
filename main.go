@@ -77,11 +77,10 @@ const (
 )
 
 var (
-	STYLE_KEY             = tcell.StyleDefault.Foreground(tcell.ColorBlue)
-	STYLE_KEY_HIGHLIGHTED = tcell.StyleDefault.Foreground(tcell.ColorRed)
-	STYLE_STRING          = tcell.StyleDefault.Foreground(tcell.ColorGreen)
-	STYLE_NULL            = tcell.StyleDefault.Foreground(tcell.ColorGray)
-	STYLE_DEFAULT         = tcell.StyleDefault
+	STYLE_KEY     = tcell.StyleDefault.Foreground(tcell.ColorBlue)
+	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	STYLE_NULL    = tcell.StyleDefault.Foreground(tcell.ColorGray)
+	STYLE_DEFAULT = tcell.StyleDefault
 )
 
 func main() {
@@ -274,11 +273,19 @@ func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interf
 	*y++
 	for i, k := range keys {
 		kToDraw := fmt.Sprintf(`%s: `, k)
-		style := STYLE_KEY
+		styleKey := STYLE_KEY
+		styleString := STYLE_STRING
+		styleDefault := STYLE_DEFAULT
+		styleNull := STYLE_NULL
 		if i == highlightedIndex {
-			style = STYLE_KEY_HIGHLIGHTED
+			drawLine(s, x, *y, tcell.StyleDefault.Background(tcell.ColorRed), " ")
+			drawLine(s, x+1, *y, tcell.StyleDefault.Background(tcell.ColorBlack), " ")
+			styleKey = STYLE_KEY.Background(tcell.ColorBlack)
+			styleString = STYLE_STRING.Background(tcell.ColorBlack)
+			styleDefault = STYLE_DEFAULT.Background(tcell.ColorBlack)
+			styleNull = STYLE_NULL.Background(tcell.ColorBlack)
 		}
-		drawLine(s, x+2, *y, style, kToDraw)
+		drawLine(s, x+2, *y, styleKey, kToDraw)
 		vStart := x + 2 + len(kToDraw)
 		var v interface{}
 		if showField {
@@ -288,24 +295,24 @@ func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interf
 		}
 		switch vForReal := v.(type) {
 		case string:
-			drawLine(s, vStart, *y, STYLE_STRING, vForReal)
+			drawLine(s, vStart, *y, styleString, vForReal)
 			*y++
 		case []interface{}:
 			if len(vForReal) == 0 {
-				drawLine(s, vStart, *y, STYLE_DEFAULT, "[]")
+				drawLine(s, vStart, *y, styleDefault, "[]")
 			} else {
 				*y++
 				for _, e := range vForReal {
-					drawLine(s, x+4, *y, STYLE_DEFAULT, "- ")
-					drawLine(s, x+6, *y, STYLE_STRING, e.(string))
+					drawLine(s, x+4, *y, styleDefault, "- ")
+					drawLine(s, x+6, *y, styleString, e.(string))
 					*y++
 				}
 			}
 		case nil:
-			drawLine(s, vStart, *y, tcell.StyleDefault.Foreground(tcell.ColorGray), "null")
+			drawLine(s, vStart, *y, styleNull, "null")
 			*y++
 		default:
-			drawLine(s, vStart, *y, tcell.StyleDefault, fmt.Sprintf("%v", vForReal))
+			drawLine(s, vStart, *y, styleDefault, fmt.Sprintf("%v", vForReal))
 			*y++
 		}
 	}
