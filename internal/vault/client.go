@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -14,6 +16,25 @@ import (
 type Client struct {
 	Addr  string
 	Token string
+}
+
+func NewClient() (Client, error) {
+	addr, found := os.LookupEnv("VAULT_ADDR")
+	if !found {
+		return Client{}, fmt.Errorf("Environment variable VAULT_ADDR must be set")
+	}
+	tokenBytes, err := exec.Command("vault", "print", "token").Output()
+	token := strings.TrimSpace(string(tokenBytes))
+	if err != nil || token == "" {
+		token, found = os.LookupEnv("VAULT_TOKEN")
+		if !found {
+			return Client{}, fmt.Errorf("Failed to find vault token using `vault print token` and environment variable VAULT_TOKEN")
+		}
+	}
+	return Client{
+		Addr:  addr,
+		Token: token,
+	}, nil
 }
 
 type dirEnt struct {

@@ -17,14 +17,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-func mustGetEnv(name string) string {
-	value, found := os.LookupEnv(name)
-	if !found {
-		fatal("Environment variable %s must be set", name)
-	}
-	return value
-}
-
 func fatal(format string, args ...any) {
 	format += "\n"
 	fmt.Fprintf(os.Stderr, format, args...)
@@ -86,9 +78,9 @@ var (
 
 func main() {
 	log.SetFlags(0) // Disable the timestamp
-	vaultClient := vault.Client{
-		Addr:  mustGetEnv("VAULT_ADDR"),
-		Token: mustGetEnv("VAULT_TOKEN"),
+	vaultClient, err := vault.NewClient()
+	if err != nil {
+		fatal("Failed to create vault client: %v", err)
 	}
 	mounts, err := vaultClient.GetMounts()
 	if err != nil {

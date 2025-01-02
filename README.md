@@ -10,7 +10,9 @@ To do it, do:
 git clone https://github.com/slarwise/pole
 go install
 export VAULT_ADDR=https://my-vault.com
-export VAULT_TOKEN=secret-token
+# The vault token is taken from the VAULT_TOKEN env var or from ~/.vault-token
+# Logging into vault with `vault login` stores it in ~/.vault-token by default
+vault login -method oidc
 pole
 ```
 
