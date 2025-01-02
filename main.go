@@ -31,21 +31,23 @@ func fatal(msg string, args ...any) {
 }
 
 type Ui struct {
-	Screen       tcell.Screen
-	Keys         []string
-	FilteredKeys []string
-	Secret       vault.Secret
-	Prompt       string
-	ViewStart    int
-	ViewEnd      int
-	Cursor       int
-	Width        int
-	Height       int
-	Result       []byte
-	Vault        vault.Client
-	Mounts       []string
-	CurrentMount int
-	ShowHelp     bool
+	Screen        tcell.Screen
+	Keys          []string
+	FilteredKeys  []string
+	Secret        vault.Secret
+	Prompt        string
+	ViewStart     int
+	ViewEnd       int
+	Cursor        int
+	Width         int
+	Height        int
+	Result        []byte
+	Vault         vault.Client
+	Mounts        []string
+	CurrentMount  int
+	ShowHelp      bool
+	SelectedField int
+	ShowSecret    bool
 }
 
 func newUi(vaultClient vault.Client, mounts []string) (Ui, error) {
@@ -75,10 +77,11 @@ const (
 )
 
 var (
-	STYLE_KEY     = tcell.StyleDefault.Foreground(tcell.ColorBlue)
-	STYLE_STRING  = tcell.StyleDefault.Foreground(tcell.ColorGreen)
-	STYLE_NULL    = tcell.StyleDefault.Foreground(tcell.ColorGray)
-	STYLE_DEFAULT = tcell.StyleDefault
+	STYLE_KEY             = tcell.StyleDefault.Foreground(tcell.ColorBlue)
+	STYLE_KEY_HIGHLIGHTED = tcell.StyleDefault.Foreground(tcell.ColorRed)
+	STYLE_STRING          = tcell.StyleDefault.Foreground(tcell.ColorGreen)
+	STYLE_NULL            = tcell.StyleDefault.Foreground(tcell.ColorGray)
+	STYLE_DEFAULT         = tcell.StyleDefault
 )
 
 func main() {
@@ -172,10 +175,18 @@ func main() {
 				ui.nextMount()
 			case tcell.KeyRight:
 				ui.previousMount()
-			case tcell.KeyCtrlK, tcell.KeyCtrlP, tcell.KeyUp:
+			case tcell.KeyCtrlK, tcell.KeyUp:
 				ui.moveUp()
-			case tcell.KeyCtrlJ, tcell.KeyCtrlN, tcell.KeyDown:
+			case tcell.KeyCtrlJ, tcell.KeyDown:
 				ui.moveDown()
+			case tcell.KeyCtrlN:
+				ui.moveSelectedFieldDown()
+			case tcell.KeyCtrlP:
+				ui.moveSelectedFieldUp()
+			case tcell.KeyCtrlY:
+				ui.copyCurrentField()
+			case tcell.KeyCtrlI:
+				ui.toggleShowSecret()
 				// TODO: Add key for refreshing the secrets
 			}
 		}
@@ -245,11 +256,11 @@ func (u Ui) drawSecret() {
 	}
 	x := u.Width/2 + 2
 	y := 0
-	drawData(u.Screen, x, &y, "data", u.Secret.Data.Data)
-	drawData(u.Screen, x, &y, "metadata", u.Secret.Data.Metadata)
+	drawData(u.Screen, x, &y, "data", u.Secret.Data.Data, u.SelectedField, u.ShowSecret)
+	drawData(u.Screen, x, &y, "metadata", u.Secret.Data.Metadata, -1, true)
 }
 
-func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}) {
+func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}, highlightedIndex int, showField bool) {
 	keys := []string{}
 	for k := range data {
 		keys = append(keys, k)
@@ -258,11 +269,20 @@ func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interf
 	kToDraw := fmt.Sprintf(`%s: `, name)
 	drawLine(s, x, *y, STYLE_KEY, kToDraw)
 	*y++
-	for _, k := range keys {
+	for i, k := range keys {
 		kToDraw := fmt.Sprintf(`%s: `, k)
-		drawLine(s, x+2, *y, STYLE_KEY, kToDraw)
+		style := STYLE_KEY
+		if i == highlightedIndex {
+			style = STYLE_KEY_HIGHLIGHTED
+		}
+		drawLine(s, x+2, *y, style, kToDraw)
 		vStart := x + 2 + len(kToDraw)
-		v := data[k]
+		var v interface{}
+		if showField {
+			v = data[k]
+		} else {
+			v = "*******"
+		}
 		switch vForReal := v.(type) {
 		case string:
 			drawLine(s, vStart, *y, STYLE_STRING, vForReal)
@@ -306,7 +326,7 @@ func (u Ui) drawHelp() {
 	if !u.ShowHelp {
 		return
 	}
-	helpStr := "Move ↑↓ Change mount ←→ Exit <Esc>"
+	helpStr := "Move ↑↓ Change mount ←→ Change field C-[N/P] Copy C-Y Exit <Esc>"
 	drawLine(u.Screen, u.Width/2-len(helpStr)/2+4, u.Height-1, tcell.StyleDefault.Foreground(tcell.ColorRed), helpStr)
 }
 
@@ -369,6 +389,7 @@ func (u *Ui) moveUp() {
 			u.Cursor++
 		}
 	}
+	u.SelectedField = 0
 	u.setSecret()
 }
 
@@ -381,6 +402,7 @@ func (u *Ui) moveDown() {
 			u.Cursor--
 		}
 	}
+	u.SelectedField = 0
 	u.setSecret()
 }
 
@@ -418,6 +440,28 @@ func (u *Ui) openInBrowser() {
 	if err := cmd.Run(); err != nil {
 		slog.Error("Failed to open secret in browser", "err", err, "url", url)
 	}
+}
+
+func (u *Ui) moveSelectedFieldDown() {
+	u.SelectedField = min(max(0, len(u.Secret.Data.Data)-1), u.SelectedField+1)
+}
+
+func (u *Ui) moveSelectedFieldUp() {
+	u.SelectedField = max(0, u.SelectedField-1)
+}
+
+func (u *Ui) toggleShowSecret() {
+	u.ShowSecret = !u.ShowSecret
+}
+
+func (u Ui) copyCurrentField() {
+	keys := []string{}
+	for k := range u.Secret.Data.Data {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	val := u.Secret.Data.Data[keys[u.SelectedField]]
+	u.Screen.SetClipboard([]byte(fmt.Sprint(val)))
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
