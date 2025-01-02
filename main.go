@@ -156,6 +156,8 @@ func main() {
 			case tcell.KeyCtrlU:
 				ui.Prompt = ""
 				ui.newKeysView()
+			case tcell.KeyCtrlY:
+				ui.copyCurrentField()
 			case tcell.KeyRune:
 				switch ev.Rune() {
 				case '?':
@@ -417,6 +419,14 @@ func (u *Ui) openInBrowser() {
 	cmd := exec.Command("open", url)
 	if err := cmd.Run(); err != nil {
 		slog.Error("Failed to open secret in browser", "err", err, "url", url)
+	}
+}
+
+func (u Ui) copyCurrentField() {
+	// TODO: Copy the selected field, now the first field is copied
+	for _, val := range u.Secret.Data.Data {
+		u.Screen.SetClipboard([]byte(fmt.Sprint(val)))
+		break
 	}
 }
 
