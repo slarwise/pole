@@ -19,16 +19,11 @@ Filter secrets fuzzily by typing letters, navigate secrets and mounts with the a
 
 ## Development
 
-To start and populate a local vault server, run
+Run tests with `go test ./...`. To start and populate a local vault server, run
 
 ```sh
 go run dev-vault/main.go
+source dev-vault/env.sh
 ```
 
-Set the environment with
-
-```sh
-dev-vault/env.sh
-```
-
-and run `go run main.go` to test it.
+and run `go run main.go` to test against it.
