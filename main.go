@@ -499,5 +499,3 @@ func matchesPrompt(prompt, s string) (bool, int) {
 	}
 	return false, 0
 }
-
-// TODO: Handle panic when no secrets are found, usually due to incorrect vault token
