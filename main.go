@@ -20,13 +20,14 @@ import (
 func mustGetEnv(name string) string {
 	value, found := os.LookupEnv(name)
 	if !found {
-		fatal(fmt.Sprintf("Environment variable %s must be set", name))
+		fatal("Environment variable %s must be set", name)
 	}
 	return value
 }
 
-func fatal(msg string, args ...any) {
-	slog.Error(msg, args...)
+func fatal(format string, args ...any) {
+	format += "\n"
+	fmt.Fprintf(os.Stderr, format, args...)
 	os.Exit(1)
 }
 
@@ -91,12 +92,12 @@ func main() {
 	}
 	mounts, err := vaultClient.GetMounts()
 	if err != nil {
-		fatal("Failed to get mounts", "err", err)
+		fatal("Failed to get mounts: %v", err)
 	}
 	if len(os.Getenv("DEBUG")) > 0 {
 		logFile, err := os.Create("./log")
 		if err != nil {
-			fatal("Failed to create log file", "err", err)
+			fatal("Failed to create log file: %v", err)
 		}
 		slog.SetDefault(slog.New(slog.NewTextHandler(logFile, nil)))
 	} else {
@@ -104,7 +105,7 @@ func main() {
 	}
 	ui, err := newUi(vaultClient, mounts)
 	if err != nil {
-		fatal("Failed to initialize UI", "err", err)
+		fatal("Failed to initialize UI: %v", err)
 	}
 	quit := func() {
 		// You have to catch panics in a defer, clean up, and
