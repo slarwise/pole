@@ -47,6 +47,7 @@ type Ui struct {
 	CurrentMount  int
 	ShowHelp      bool
 	SelectedField int
+	ShowSecret    bool
 }
 
 func newUi(vaultClient vault.Client, mounts []string) (Ui, error) {
@@ -158,12 +159,6 @@ func main() {
 			case tcell.KeyCtrlU:
 				ui.Prompt = ""
 				ui.newKeysView()
-			case tcell.KeyCtrlN:
-				ui.moveSelectedFieldDown()
-			case tcell.KeyCtrlP:
-				ui.moveSelectedFieldUp()
-			case tcell.KeyCtrlY:
-				ui.copyCurrentField()
 			case tcell.KeyRune:
 				switch ev.Rune() {
 				case '?':
@@ -184,6 +179,14 @@ func main() {
 				ui.moveUp()
 			case tcell.KeyCtrlJ, tcell.KeyDown:
 				ui.moveDown()
+			case tcell.KeyCtrlN:
+				ui.moveSelectedFieldDown()
+			case tcell.KeyCtrlP:
+				ui.moveSelectedFieldUp()
+			case tcell.KeyCtrlY:
+				ui.copyCurrentField()
+			case tcell.KeyCtrlI:
+				ui.toggleShowSecret()
 				// TODO: Add key for refreshing the secrets
 			}
 		}
@@ -253,11 +256,11 @@ func (u Ui) drawSecret() {
 	}
 	x := u.Width/2 + 2
 	y := 0
-	drawData(u.Screen, x, &y, "data", u.Secret.Data.Data, u.SelectedField)
-	drawData(u.Screen, x, &y, "metadata", u.Secret.Data.Metadata, -1)
+	drawData(u.Screen, x, &y, "data", u.Secret.Data.Data, u.SelectedField, u.ShowSecret)
+	drawData(u.Screen, x, &y, "metadata", u.Secret.Data.Metadata, -1, true)
 }
 
-func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}, highlightedIndex int) {
+func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interface{}, highlightedIndex int, showField bool) {
 	keys := []string{}
 	for k := range data {
 		keys = append(keys, k)
@@ -274,7 +277,12 @@ func drawData(s tcell.Screen, x int, y *int, name string, data map[string]interf
 		}
 		drawLine(s, x+2, *y, style, kToDraw)
 		vStart := x + 2 + len(kToDraw)
-		v := data[k]
+		var v interface{}
+		if showField {
+			v = data[k]
+		} else {
+			v = "*******"
+		}
 		switch vForReal := v.(type) {
 		case string:
 			drawLine(s, vStart, *y, STYLE_STRING, vForReal)
@@ -440,6 +448,10 @@ func (u *Ui) moveSelectedFieldDown() {
 
 func (u *Ui) moveSelectedFieldUp() {
 	u.SelectedField = max(0, u.SelectedField-1)
+}
+
+func (u *Ui) toggleShowSecret() {
+	u.ShowSecret = !u.ShowSecret
 }
 
 func (u Ui) copyCurrentField() {
