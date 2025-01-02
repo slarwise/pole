@@ -7,8 +7,7 @@ Browse secrets in vault in the terminal.
 To do it, do:
 
 ```sh
-git clone https://github.com/slarwise/pole
-go install
+go install github.com/slarwise/pole@latest
 export VAULT_ADDR=https://my-vault.com
 # The vault token is taken from the VAULT_TOKEN env var or from ~/.vault-token
 # Logging into vault with `vault login` stores it in ~/.vault-token by default
