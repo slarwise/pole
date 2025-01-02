@@ -109,11 +109,12 @@ func main() {
 		// You have to catch panics in a defer, clean up, and
 		// re-raise them - otherwise your application can
 		// die without leaving any diagnostic trace.
-		errorMsg := recover()
+		maybePanic := recover()
 		ui.Screen.Fini()
-		if errorMsg != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", errorMsg)
-		} else if len(ui.Result) != 0 {
+		if maybePanic != nil {
+			panic(maybePanic)
+		}
+		if len(ui.Result) != 0 {
 			fmt.Printf("%s\n", ui.Result)
 		}
 	}
