@@ -189,7 +189,9 @@ func main() {
 				ui.moveSelectedFieldUp()
 			case tcell.KeyCtrlI:
 				ui.toggleShowSecret()
-				// TODO: Add key for refreshing the secrets
+			case tcell.KeyCtrlR:
+				ui.Vault.ClearSecretsCache()
+				ui.setSecret()
 			}
 		}
 

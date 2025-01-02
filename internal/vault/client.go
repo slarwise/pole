@@ -162,6 +162,11 @@ func (c Client) GetSecret(mount, name string) Secret {
 	return secret
 }
 
+func (c Client) ClearSecretsCache() {
+	cachedSecrets = make(map[string]Secret)
+	slog.Info("Cache cleared")
+}
+
 type MountResponse struct {
 	Data struct {
 		Secret map[string]Mount
