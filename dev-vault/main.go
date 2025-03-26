@@ -267,6 +267,7 @@ var (
 	DATA = map[string]interface{}{
 		"username":   "psy",
 		"password":   "hunter2",
+		"html":       "<html><body><h1>encodingisevil&wrong</h1></body></html>",
 		"oopa":       "gangnam",
 		"roles":      []string{"reader", "writer", "philantropist"},
 		"a":          "bcd, etc",

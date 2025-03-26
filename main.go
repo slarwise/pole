@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -137,11 +138,14 @@ func main() {
 				return
 			case tcell.KeyEnter:
 				if !(reflect.ValueOf(ui.Secret).IsZero()) {
-					bytes, err := json.MarshalIndent(ui.Secret, "", "  ")
-					if err != nil {
+					var buf bytes.Buffer
+					encoder := json.NewEncoder(&buf)
+					encoder.SetEscapeHTML(false)
+					encoder.SetIndent("", "  ")
+					if err := encoder.Encode(ui.Secret); err != nil {
 						panic(fmt.Sprintf("Failed to marshal secret: %s", err))
 					}
-					ui.Result = bytes
+					ui.Result = buf.Bytes()
 				}
 				return
 			case tcell.KeyCtrlO:
