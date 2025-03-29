@@ -15,7 +15,40 @@ vault login -method oidc
 pole
 ```
 
-Filter secrets fuzzily by typing letters, navigate secrets and mounts with the arrow keys.
+## Keybindings
+
+To quit, press `Escape` or `c-c` (`<c-<letter>` means `Ctrl-<letter>`). Type letters to filter the secrets, delete with backspace and clear the prompt with `c-u`. `Enter` prints the secret and exits. The following actions can be bound to other keys:
+
+| Action              | Default keybind |
+| ------------------- | --------------- |
+| next-secret         | `c-j`           |
+| prev-secret         | `c-k`           |
+| next-field          | `c-n`           |
+| prev-field          | `c-p`           |
+| next-mount          | `right`, `,`    |
+| prev-mount          | `left`, `;`     |
+| toggle-show-help    | `?`             |
+| toggle-show-secrets | `c-i`           |
+| open-in-browser     | `c-o`           |
+| refresh-secrets     | `c-r`           |
+| copy-selected-field | `space`         |
+
+If you want to change these, put something like this in `~/.config/pole/config`. Each line is on the form `<keybind><space(s)><action>` The available named keys are `up`, `down`, `right`, `left`, `page-up`, `page-down`, `tab` and `space`. If you provide a config file, all actions must be bound, the defaults are not inherited. Different keys can be bound to the same action.
+
+```
+down      next-secret
+c-j       next-secret
+up        prev-secret
+page-down next-field
+page-up   prev-field
+right     next-mount
+left      prev-mount
+?         toggle-show-help
+tab       toggle-show-secrets
+c-o       open-in-browser
+c-r       refresh-secrets
+space     copy-selected-field
+```
 
 ## Development
 
