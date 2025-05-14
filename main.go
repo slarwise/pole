@@ -3,13 +3,16 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -42,9 +45,10 @@ type Ui struct {
 	ShowHelp      bool
 	SelectedField int
 	ShowSecret    bool
+	Keybinds      Keybinds
 }
 
-func newUi(vaultClient vault.Client, mounts []string) (Ui, error) {
+func newUi(vaultClient vault.Client, mounts []string, keybinds Keybinds) (Ui, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return Ui{}, fmt.Errorf("Failed to create a terminal screen: %s", err)
@@ -63,6 +67,7 @@ func newUi(vaultClient vault.Client, mounts []string) (Ui, error) {
 		Screen:       screen,
 		Width:        width,
 		Height:       height,
+		Keybinds:     keybinds,
 	}, nil
 }
 
@@ -77,7 +82,124 @@ var (
 	STYLE_DEFAULT = tcell.StyleDefault
 )
 
+type Keybinds struct {
+	Keys  map[tcell.Key]func(u *Ui)
+	Runes map[rune]func(u *Ui)
+}
+
+var defaultKeybinds = Keybinds{
+	Keys: map[tcell.Key]func(u *Ui){
+		tcell.KeyCtrlO: func(u *Ui) { u.openInBrowser() },
+		tcell.KeyLeft:  func(u *Ui) { u.previousMount() },
+		tcell.KeyRight: func(u *Ui) { u.nextMount() },
+		tcell.KeyCtrlJ: func(u *Ui) { u.moveDown() },
+		tcell.KeyCtrlK: func(u *Ui) { u.moveUp() },
+		tcell.KeyCtrlN: func(u *Ui) { u.moveSelectedFieldDown() },
+		tcell.KeyCtrlP: func(u *Ui) { u.moveSelectedFieldUp() },
+		tcell.KeyCtrlI: func(u *Ui) { u.toggleShowSecret() },
+		tcell.KeyCtrlR: func(u *Ui) { u.refreshSecrets() },
+	},
+	Runes: map[rune]func(u *Ui){
+		'?': func(u *Ui) { u.ShowHelp = !u.ShowHelp },
+		',': func(u *Ui) { u.nextMount() },
+		';': func(u *Ui) { u.previousMount() },
+		' ': func(u *Ui) { u.copyCurrentField() },
+	},
+}
+
+var keybindCtrlPattern = regexp.MustCompile(`^c-([a-z])$`)
+
+func readKeybinds(configPath string) (Keybinds, error) {
+	if configPath == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return Keybinds{}, fmt.Errorf("get home dir: %v", err)
+		}
+		configPath = filepath.Join(homeDir, ".config", "pole", "config")
+		if _, err := os.Stat(configPath); err != nil {
+			return defaultKeybinds, nil
+		}
+	}
+	bytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return Keybinds{}, fmt.Errorf("read %v: %v", configPath, err)
+	}
+	keybinds := Keybinds{}
+	keybinds.Keys = map[tcell.Key]func(u *Ui){}
+	keybinds.Runes = map[rune]func(u *Ui){}
+	lines := strings.FieldsFunc(string(bytes), func(r rune) bool { return r == '\n' })
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			return Keybinds{}, fmt.Errorf("expected each line to be on the form <key><space><value>, got %v", line)
+		}
+		keybind, action := fields[0], fields[1]
+		var f func(u *Ui)
+		switch action {
+		case "open-in-browser":
+			f = func(u *Ui) { u.openInBrowser() }
+		case "prev-mount":
+			f = func(u *Ui) { u.previousMount() }
+		case "next-mount":
+			f = func(u *Ui) { u.nextMount() }
+		case "next-secret":
+			f = func(u *Ui) { u.moveDown() }
+		case "prev-secret":
+			f = func(u *Ui) { u.moveUp() }
+		case "next-field":
+			f = func(u *Ui) { u.moveSelectedFieldDown() }
+		case "prev-field":
+			f = func(u *Ui) { u.moveSelectedFieldUp() }
+		case "toggle-show-secrets":
+			f = func(u *Ui) { u.toggleShowSecret() }
+		case "refresh-secrets":
+			f = func(u *Ui) { u.refreshSecrets() }
+		case "toggle-show-help":
+			f = func(u *Ui) { u.ShowHelp = !u.ShowHelp }
+		case "copy-selected-field":
+			f = func(u *Ui) { u.copyCurrentField() }
+		default:
+			return Keybinds{}, fmt.Errorf("got unknown action `%v`. See https://github.com/slarwise/pole/tree/main?tab=readme-ov-file#keybindings for the available actions.", action)
+		}
+
+		keybind = strings.ToLower(keybind)
+		if keybind == "space" {
+			keybinds.Runes[' '] = f
+		} else if len(keybind) == 1 {
+			keybinds.Runes[rune(keybind[0])] = f
+		} else if keybindCtrlPattern.MatchString(keybind) {
+			match := keybindCtrlPattern.FindStringSubmatch(keybind)[1]
+			asciiValue := byte(match[0])
+			keybinds.Keys[tcell.Key(asciiValue-96)] = f
+		} else if keybind == "up" {
+			keybinds.Keys[tcell.KeyUp] = f
+		} else if keybind == "down" {
+			keybinds.Keys[tcell.KeyDown] = f
+		} else if keybind == "right" {
+			keybinds.Keys[tcell.KeyRight] = f
+		} else if keybind == "left" {
+			keybinds.Keys[tcell.KeyLeft] = f
+		} else if keybind == "page-up" {
+			keybinds.Keys[tcell.KeyPgUp] = f
+		} else if keybind == "page-down" {
+			keybinds.Keys[tcell.KeyPgDn] = f
+		} else if keybind == "tab" {
+			keybinds.Keys[tcell.KeyTab] = f
+		} else {
+			return Keybinds{}, fmt.Errorf("unknown keybind: `%v`. See https://github.com/slarwise/pole/tree/main?tab=readme-ov-file#keybindings for available keybindings.", keybind)
+		}
+	}
+
+	return keybinds, nil
+}
+
 func main() {
+	configPath := flag.String("config", "", "The path to the config file")
+	flag.Parse()
+	keybinds, err := readKeybinds(*configPath)
+	if err != nil {
+		fatal("Read keybind config: %v", err)
+	}
 	log.SetFlags(0) // Disable the timestamp
 	vaultClient, err := vault.NewClient()
 	if err != nil {
@@ -96,7 +218,7 @@ func main() {
 	} else {
 		log.SetOutput(io.Discard)
 	}
-	ui, err := newUi(vaultClient, mounts)
+	ui, err := newUi(vaultClient, mounts, keybinds)
 	if err != nil {
 		fatal("Failed to initialize UI: %v", err)
 	}
@@ -148,8 +270,6 @@ func main() {
 					ui.Result = buf.Bytes()
 				}
 				return
-			case tcell.KeyCtrlO:
-				ui.openInBrowser()
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
 				if len(ui.Prompt) > 0 {
 					ui.Prompt = ui.Prompt[:len(ui.Prompt)-1]
@@ -159,36 +279,16 @@ func main() {
 				ui.Prompt = ""
 				ui.newKeysView()
 			case tcell.KeyRune:
-				switch ev.Rune() {
-				case '?':
-					ui.ShowHelp = !ui.ShowHelp
-				case ',':
-					ui.nextMount()
-				case ';':
-					ui.previousMount()
-				case ' ':
-					ui.copyCurrentField()
-				default:
+				if action, found := ui.Keybinds.Runes[ev.Rune()]; found {
+					action(&ui)
+				} else {
 					ui.Prompt += string(ev.Rune())
 					ui.newKeysView()
 				}
-			case tcell.KeyLeft:
-				ui.nextMount()
-			case tcell.KeyRight:
-				ui.previousMount()
-			case tcell.KeyCtrlK, tcell.KeyUp:
-				ui.moveUp()
-			case tcell.KeyCtrlJ, tcell.KeyDown:
-				ui.moveDown()
-			case tcell.KeyCtrlN:
-				ui.moveSelectedFieldDown()
-			case tcell.KeyCtrlP:
-				ui.moveSelectedFieldUp()
-			case tcell.KeyCtrlI:
-				ui.toggleShowSecret()
-			case tcell.KeyCtrlR:
-				ui.Vault.ClearSecretsCache()
-				ui.setSecret()
+			default:
+				if action, found := ui.Keybinds.Keys[ev.Key()]; found {
+					action(&ui)
+				}
 			}
 		}
 
@@ -415,7 +515,7 @@ func (u *Ui) moveDown() {
 	u.setSecret()
 }
 
-func (u *Ui) nextMount() {
+func (u *Ui) previousMount() {
 	if len(u.Mounts) < 2 {
 		return
 	}
@@ -431,7 +531,7 @@ func (u *Ui) nextMount() {
 	u.newKeysView()
 }
 
-func (u *Ui) previousMount() {
+func (u *Ui) nextMount() {
 	if len(u.Mounts) < 2 {
 		return
 	}
@@ -471,6 +571,11 @@ func (u Ui) copyCurrentField() {
 	slices.Sort(keys)
 	val := u.Secret.Data.Data[keys[u.SelectedField]]
 	u.Screen.SetClipboard([]byte(fmt.Sprint(val)))
+}
+
+func (u *Ui) refreshSecrets() {
+	u.Vault.ClearSecretsCache()
+	u.setSecret()
 }
 
 func matchesPrompt(prompt, s string) (bool, int) {
