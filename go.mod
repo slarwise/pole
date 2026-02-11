@@ -1,6 +1,6 @@
 module github.com/slarwise/pole
 
-go 1.24
+go 1.25
 
 require github.com/gdamore/tcell/v2 v2.8.1
 
