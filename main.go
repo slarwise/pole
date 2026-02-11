@@ -218,6 +218,12 @@ func main() {
 	} else {
 		log.SetOutput(io.Discard)
 	}
+	if len(flag.Args()) > 0 && flag.Arg(0) == "list" {
+		if err := listSecrets(vaultClient, mounts, flag.Args()[1:]); err != nil {
+			fatal("list secrets: %s", err)
+		}
+		return
+	}
 	ui, err := newUi(vaultClient, mounts, keybinds)
 	if err != nil {
 		fatal("Failed to initialize UI: %v", err)
@@ -602,4 +608,19 @@ func matchesPrompt(prompt, s string) (bool, int) {
 		}
 	}
 	return false, 0
+}
+
+func listSecrets(vaultClient vault.Client, mounts []string, args []string) error {
+	mount := mounts[0]
+	if len(args) > 0 {
+		mount = args[0]
+		if !slices.Contains(mounts, mount) {
+			return fmt.Errorf("unknown mount `%s`. Available mounts: %v", mount, mounts)
+		}
+	}
+	keys := vaultClient.GetKeys(mount)
+	for _, key := range keys {
+		fmt.Println(key)
+	}
+	return nil
 }
