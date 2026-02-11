@@ -105,7 +105,7 @@ func createMount(name string) error {
 	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf(string(output))
+		return fmt.Errorf("%s", string(output))
 	}
 	return nil
 }
